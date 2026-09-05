@@ -9,10 +9,11 @@ run, which is the entire budget we have for motion.
 from xml.sax.saxutils import escape as _escape
 
 # ── mostly neutral, rose as a sparing accent ───────────────────────────────
-# White/gray on near-black, matched to the id-card's canvas. ROSE is spent on
-# one highlight per chart, not carried through every element.
-BG    = "#0c0c0e"   # page ground, matches the id-card canvas
-LINE  = "#2a2226"
+# White/gray on near-black, matched to the id-card's canvas — and to GitHub's
+# own dark-theme canvas/border colors, so the panels sit flush against the
+# profile page instead of showing up as an off-black box.
+BG    = "#0d1117"   # GitHub dark-theme canvas.default
+LINE  = "#30363d"   # GitHub dark-theme border.default
 DIM   = "#8a8790"
 MUTED = "#c7c5c8"
 FG    = "#f5f5f6"
@@ -71,12 +72,17 @@ def rect(x, y, w, h, *, fill="none", stroke=None, sw=1, rx=0, cls=None,
 BASE_CSS = f"""
   .fade    {{ opacity:0; animation:fade .8s ease forwards; }}
   .rise    {{ opacity:0; animation:rise .7s cubic-bezier(.2,.7,.3,1) forwards; }}
+  .build   {{ opacity:0; transform-box:fill-box; transform-origin:50% 100%;
+              transform:scaleY(.05); animation:build .55s cubic-bezier(.3,1.3,.4,1) forwards; }}
   @keyframes fade  {{ to {{ opacity:1; }} }}
   @keyframes rise  {{ from {{ opacity:0; transform:translateY(9px); }}
                       to   {{ opacity:1; transform:translateY(0); }} }}
+  @keyframes build {{ 0%   {{ opacity:0; transform:scaleY(.05); }}
+                       55%  {{ opacity:1; }}
+                       100% {{ opacity:1; transform:scaleY(1); }} }}
   @media (prefers-reduced-motion: reduce) {{
     * {{ animation-duration:.01ms !important; animation-iteration-count:1 !important; }}
-    .fade, .rise {{ opacity:1 !important; }}
+    .fade, .rise, .build {{ opacity:1 !important; transform:none !important; }}
   }}
 """
 

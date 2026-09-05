@@ -144,8 +144,8 @@ def defs(PH):
         '<clipPath id="photo"><rect x="%d" y="%d" width="%d" height="%d" rx="20"/></clipPath>'
 
         '<linearGradient id="canvas" x1="0" y1="0" x2="0.4" y2="1">'
-        '<stop offset="0%%" stop-color="#0c0c0e"/>'
-        '<stop offset="100%%" stop-color="#131315"/></linearGradient>'
+        '<stop offset="0%%" stop-color="#0d1117"/>'
+        '<stop offset="100%%" stop-color="#161b22"/></linearGradient>'
 
         # the one highlight where light lands on the glass — neutral white;
         # this plus the frost grain is the entire "glass" cue, no tint blob
@@ -183,8 +183,12 @@ def defs(PH):
 
         '<linearGradient id="namefade" gradientUnits="userSpaceOnUse" '
         'x1="%d" y1="0" x2="%d" y2="0">'
-        '<stop offset="0%%" stop-color="{WHITE}"/>'
-        '<stop offset="100%%" stop-color="{ROSE}"/></linearGradient>'
+        '<stop offset="0%%" stop-color="{WHITE}">'
+        '<animate attributeName="offset" values="0%%;22%%;0%%" dur="5s" repeatCount="indefinite"/>'
+        '</stop>'
+        '<stop offset="100%%" stop-color="{ROSE}">'
+        '<animate attributeName="offset" values="100%%;78%%;100%%" dur="5s" repeatCount="indefinite"/>'
+        '</stop></linearGradient>'
 
         '<linearGradient id="pring" x1="0" y1="0" x2="1" y2="1">'
         '<stop offset="0%%" stop-color="#ffffff" stop-opacity="0.32"/>'
@@ -213,14 +217,17 @@ def defs(PH):
     )
 
 
-# The only motion left in the whole file: a slow light sheen sliding down
-# behind the photo's clip. Everything else in the panel is still.
+# Two loops now live alongside the photo sheen: the name-gradient breathe
+# (an <animate> on the namefade stops, defined in defs()) and a per-character
+# flicker on the kana watermark, below.
 STYLE = '''<style>
   .psweep { animation:psweep 4.2s cubic-bezier(.4,0,.3,1) infinite; }
   @keyframes psweep { 0% { transform:translateY(-160px); }
                        55%,100% { transform:translateY(160px); } }
+  .kana   { animation:kana 2.6s ease-in-out infinite; }
+  @keyframes kana { 0%, 100% { opacity:0.08; } 50% { opacity:0.22; } }
   @media (prefers-reduced-motion: reduce) {
-    .psweep { animation:none; }
+    .psweep, .kana { animation:none; }
   }
 </style>'''
 
@@ -244,7 +251,7 @@ def build():
 
     # -- ground + the sheet ---------------------------------------------------
     o.append(rect(0, 0, W, H, fill="url(#canvas)", rx=18))
-    o.append(rect(PX, PY, PW, PH, rx=RX, fill="#151517", opacity=0.92,
+    o.append(rect(PX, PY, PW, PH, rx=RX, fill="#161b22", opacity=0.92,
                   style="filter:url(#drop)"))
 
     o.append('<g clip-path="url(#panel)">')
@@ -259,7 +266,8 @@ def build():
     kx = PX + PW - 24
     ky = int((PY + PB) / 2 - (len(KANA) - 1) * 19) + 6
     for i, ch in enumerate(KANA):
-        o.append('<text x="' + str(kx) + '" y="' + str(ky + i * 38) + '" font-family="'
+        o.append('<text class="kana" style="animation-delay:' + format(i * 0.35, ".2f")
+                 + 's" x="' + str(kx) + '" y="' + str(ky + i * 38) + '" font-family="'
                  + JP + '" font-size="24" fill="#ffffff" opacity="0.08" '
                  'text-anchor="middle">' + esc(ch) + '</text>')
 

@@ -256,6 +256,12 @@ def draw_activity_graph(o, x0, x1, ytop, base, months, accent=WHITE, peak_color=
         o.append(text(px, base + 16, dt.date.fromisoformat(ym + "-01").strftime("%b")[0],
                       size=8.5, fill=DIM, anchor="middle"))
 
+    # a small glow travelling the trend line on an endless loop — "activity
+    # moving through time", layered under the static peak marker above
+    o.append('<g><animateMotion dur="6s" repeatCount="indefinite" path="%s"/>'
+             '<circle r="7" fill="%s" opacity="0.16"/>'
+             '<circle r="2.6" fill="%s"/></g>' % (path, peak_color, accent))
+
 
 def spline(pts):
     """Catmull-Rom through `pts`, emitted as cubic beziers, plus its length."""
@@ -282,10 +288,14 @@ def _poly(pts, fill, opacity):
     return '<path d="%s" fill="%s" opacity="%.3f"/>' % (d, fill, opacity)
 
 
-def iso_tile(gx, gy, hw, hh, eh, fill, base_op):
+def iso_tile(gx, gy, hw, hh, eh, fill, base_op, delay=None):
     """Ground point (gx, gy), footprint half-extents (hw, hh), extrusion
     height eh. eh=0 renders as a flat ground tile — a day with no
     contributions still shows up, just level with the ground.
+
+    `delay`, when given, wraps the tile in a `.build` group so it grows up
+    out of the ground on load — staggered per-tile, the skyline rises one
+    building at a time instead of appearing all at once.
     """
     N = (gx, gy - eh - hh)
     E = (gx + hw, gy - eh)
@@ -297,7 +307,10 @@ def iso_tile(gx, gy, hw, hh, eh, fill, base_op):
         parts.append(_poly([Wp, S, Sg, Wg], fill, base_op * 0.42))   # left, darkest
         parts.append(_poly([S, E, Eg, Sg], fill, base_op * 0.68))    # right, mid
     parts.append(_poly([N, E, S, Wp], fill, base_op))                # top, brightest
-    return parts
+    if delay is None:
+        return parts
+    return ['<g class="build" style="animation-delay:%.3fs">' % delay
+            + "".join(parts) + '</g>']
 
 
 # ═══════════════════════════════════════════════════════════ charts ══════════
@@ -364,7 +377,8 @@ def build_calendar(d):
                 eh = 4
             fill = ROSE if is_best else WHITE
             base_op = 0.95 if is_best else LEVEL_OP[level(v)]
-            o.extend(iso_tile(gx, gy, hw, hh, eh, fill, base_op))
+            delay = col * 0.03 + row * 0.012
+            o.extend(iso_tile(gx, gy, hw, hh, eh, fill, base_op, delay=delay))
 
         cal_bottom = oy + max(gys) + hh
 
@@ -386,13 +400,35 @@ def build_calendar(d):
         h = max(3, max_h * v / peak_wk)
         is_best = v == peak_wk and v > 0
         o.append(rect(bx_, base_y - h, bar_w, h, rx=bar_w / 2,
-                      fill=ROSE if is_best else WHITE, opacity=0.95 if is_best else 0.3))
+                      fill=ROSE if is_best else WHITE, opacity=0.95 if is_best else 0.3,
+                      cls="build", style="animation-delay:%.2fs" % (0.5 + i * 0.07)))
         o.append(text(bx_ + bar_w / 2, base_y + 14, "MTWTFSS"[i], size=8,
-                      fill=ROSE if is_best else DIM, anchor="middle"))
+                      fill=ROSE if is_best else DIM, anchor="middle",
+                      cls="fade", style="animation-delay:%.2fs" % (0.6 + i * 0.07)))
 
     H = round(max(cal_bottom, base_y) + 34)
+
+    # a faint diagonal band of light drifting across the whole skyline on an
+    # endless loop, clipped to the panel's own rounded outline
+    o.append(
+        '<defs>'
+        '<clipPath id="calsweep"><rect x="0" y="0" width="%d" height="%d" rx="10"/></clipPath>'
+        '<linearGradient id="moonbeam" x1="0" y1="0" x2="1" y2="0">'
+        '<stop offset="0%%" stop-color="#ffffff" stop-opacity="0"/>'
+        '<stop offset="50%%" stop-color="#ffffff" stop-opacity="0.05"/>'
+        '<stop offset="100%%" stop-color="#ffffff" stop-opacity="0"/></linearGradient>'
+        '</defs>' % (W, H))
+    o.append(
+        '<g clip-path="url(#calsweep)" style="mix-blend-mode:screen">'
+        '<g transform="rotate(22 %d %d)">'
+        '<rect class="moonsweep" x="-260" y="-200" width="160" height="%d" fill="url(#moonbeam)"/>'
+        '</g></g>' % (W // 2, H // 2, H + 400))
+
     head = [svg_open(W, H, "Contributions - last 6 months")]
-    head.append('<style>' + BASE_CSS + '</style>')
+    head.append('<style>' + BASE_CSS + '''
+  .moonsweep { animation:moonsweep 8s ease-in-out infinite; }
+  @keyframes moonsweep { 0% { transform:translateX(0); } 100% { transform:translateX(1400px); } }
+''' + '</style>')
     head.append(rect(0, 0, W, H, fill=BG, rx=10))
     head.append(rect(0.5, 0.5, W - 1, H - 1, fill="none", stroke=LINE, sw=1, rx=10))
     return "\n".join(head + o + ['</svg>'])
