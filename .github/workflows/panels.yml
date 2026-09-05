@@ -46,26 +46,36 @@ jobs:
           assert len(files) == 2, (
               "expected 2 files (contribution-calendar, activity-graph), found %d" % len(files))
 
+          headers = {"Authorization": "Bearer " + os.environ["GH_TOKEN"],
+                     "Accept": "application/vnd.github+json",
+                     "X-GitHub-Api-Version": "2022-11-28",
+                     "User-Agent": "profile-panels"}
+          gist_url = "https://api.github.com/gists/" + os.environ["GIST_ID"]
+
+          # GitHub 422s a PATCH that nulls out a filename the gist doesn't
+          # currently have, so fetch what actually exists before asking to
+          # delete anything.
+          with urllib.request.urlopen(
+                  urllib.request.Request(gist_url, headers=headers), timeout=30) as r:
+              existing = set(json.load(r)["files"])
+
           payload = {"files": {f.name: {"content": f.read_text(encoding="utf8")}
                                for f in files}}
           for f in files:
               print("  %-22s %7d bytes" % (f.name, f.stat().st_size))
 
-          # One-time cleanup: the gist still holds files from earlier designs
-          # (the four original per-panel files, then one unified metrics.svg).
-          # Setting a file to null deletes it. Harmless once they're gone —
-          # the lookup just never matches again.
-          for stale in ("panel-overview.svg", "panel-calendar.svg",
-                        "panel-stack.svg", "panel-signals.svg", "metrics.svg"):
-              payload["files"].setdefault(stale, None)
+          # One-time cleanup: drop files left over from earlier designs (the
+          # four original per-panel files, then one unified metrics.svg) —
+          # but only the ones that are actually still there.
+          stale = {"panel-overview.svg", "panel-calendar.svg", "panel-stack.svg",
+                   "panel-signals.svg", "metrics.svg"} & existing
+          for name in stale:
+              payload["files"][name] = None
+          if stale:
+              print("removing stale:", ", ".join(sorted(stale)))
 
           req = urllib.request.Request(
-              "https://api.github.com/gists/" + os.environ["GIST_ID"],
-              data=json.dumps(payload).encode(), method="PATCH",
-              headers={"Authorization": "Bearer " + os.environ["GH_TOKEN"],
-                       "Accept": "application/vnd.github+json",
-                       "X-GitHub-Api-Version": "2022-11-28",
-                       "User-Agent": "profile-panels"})
+              gist_url, data=json.dumps(payload).encode(), method="PATCH", headers=headers)
           with urllib.request.urlopen(req, timeout=60) as r:
               print("gist updated:", r.status)
           PY
