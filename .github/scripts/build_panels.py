@@ -29,6 +29,7 @@ import argparse
 import collections
 import datetime as dt
 import json
+import math
 import os
 import pathlib
 import re
@@ -542,38 +543,31 @@ def build_activity_graph(d):
 def build_habits(d):
     """Recent coding habits for the README's closing row, sat beside the
     outro image instead of leaving that space empty — day-of-week commit
-    rhythm, plus top languages. In the spirit of lowlighter/metrics' habits
-    plugin, but in this project's own rose/neutral palette rather than its
-    blue-and-green one.
+    rhythm, plus a language-share ring. In the spirit of lowlighter/metrics'
+    habits plugin, but in this project's own rose/neutral palette rather than
+    its blue-and-green one.
 
-    The card is a fixed size (H below is a constant, not derived from how
-    much data there is): the language list is capped to the top 3 and clipped
-    to a fixed-height viewport, so extra languages are cut off rather than
-    growing the card. A real scrollbar isn't possible here — this SVG is
-    loaded through an <img> tag, which GitHub (and browsers generally) treat
-    as a flat, non-interactive image; nothing inside it can respond to a
-    wheel or drag. Clipping is the closest equivalent: it keeps the panel's
-    size locked instead of letting overflow distort the layout.
+    Languages are drawn as a hollow ring (stacked stroke-dasharray circles)
+    rather than bars: its footprint is fixed by the ring's radius, not by how
+    many languages there are or how long their names run, so nothing can
+    overflow the panel regardless of the data — the same goal the earlier
+    bar-and-clip version was reaching for, solved by the chart shape itself
+    instead of a clipPath.
     """
     W = 380
-    M = 14    # card inset — see theme.card_frame for why this floats instead
-    pad = 22
-    x0, x1 = M + pad, W - M - pad
+    pad = 16   # no card border to clear anymore, just a small breathing margin
+    x0, x1 = pad, W - pad
 
-    header_h = 34
-    day_h = 88     # label + bars + weekday letters
-    lang_label_h = 24
-    lang_rows_visible = 3
-    lang_row_h = 22
-    H = round(M * 2 + pad * 2 + header_h + day_h + lang_label_h
-              + lang_rows_visible * lang_row_h)
-
+    # Built as a body first, walking a `y` cursor down the page, so the final
+    # height comes from what actually got drawn (see build_calendar/graph's
+    # history — a fixed-offset version of this panel once overlapped its own
+    # sections when a size assumption drifted).
     body = []
-    y = M + pad
+    y = pad
     body.append(text(x0, y + 10, "Recent coding habits", size=12, fill=WHITE, family=SANS,
                      weight=700))
     body.append(text(x1, y + 10, "last 12 months", size=8.5, fill=DIM, family=SANS, anchor="end"))
-    y += header_h
+    y += 34
 
     # -- commit activity by day of week, as real bars (not the calendar's
     # capsule rhythm bars — a taller, flatter-topped bar reads more like a
@@ -594,33 +588,93 @@ def build_habits(d):
                          cls="build", style="animation-delay:%.2fs" % (0.1 + i * 0.05)))
         body.append(text(bx + bar_w / 2, base + 14, "MTWTFSS"[i], size=8,
                          fill=ROSE if is_peak else DIM, anchor="middle"))
-    y += day_h
+    y = base + 14 + 20
 
-    # -- top languages, by byte share of owned repos — clipped to a fixed
-    # number of rows so the card never grows past its default size
+    # -- top languages, by byte share of owned repos, as a hollow ring -------
+    # Capped at MAX_LANGS regardless of how many languages the account
+    # actually has (a prolific account can easily have 15+), and the legend
+    # row height then shrinks a step at a time as that count grows, so the
+    # list's own footprint stays inside a fixed max height instead of
+    # pushing the commit-streaks section below it further down every time
+    # someone picks up a new language.
     body.append(text(x0, y, "LANGUAGE ACTIVITY", size=8, fill=DIM, family=SANS, spacing=1))
-    y += lang_label_h
-    clip_id = "langclip"
-    body.append('<clipPath id="%s"><rect x="%.1f" y="%.1f" width="%.1f" height="%.1f"/>'
-               '</clipPath>' % (clip_id, x0, y, x1 - x0, lang_rows_visible * lang_row_h))
-    top = d["langs"].most_common(lang_rows_visible)
+    y += 14
+    MAX_LANGS = 6
+    top = d["langs"].most_common(MAX_LANGS)
     total_bytes = sum(v for _, v in top) or 1
-    lang_body = []
+    # rose + neutrals only, at falling opacity, rather than reaching for new
+    # hues — stays within the panel's rose/white/gray palette at any count
+    ring_colors = [(ROSE, 1), (WHITE, 0.9), (MUTED, 0.8), (DIM, 0.85), (ROSE, 0.55), (WHITE, 0.5)]
+    LEGEND_MAX_H = 108   # the hard cap "set a max size" enforces
+    row_h = min(22, LEGEND_MAX_H / max(1, len(top)))
+
+    r, sw = 38, 15
+    cx, cy = x0 + r + sw / 2, y + r + sw / 2
+    circumference = 2 * math.pi * r
+    body.append('<g transform="rotate(-90 %.1f %.1f)">' % (cx, cy))
+    cum = 0.0
+    for i, (lang, size) in enumerate(top):
+        arc = circumference * size / total_bytes
+        color, op = ring_colors[i % len(ring_colors)]
+        body.append(
+            '<circle cx="%.1f" cy="%.1f" r="%d" fill="none" stroke="%s" stroke-width="%d" '
+            'stroke-opacity="%.2f" stroke-dasharray="%.2f %.2f" stroke-dashoffset="%.2f" '
+            'class="fade" style="animation-delay:%.2fs"/>'
+            % (cx, cy, r, color, sw, op, arc, circumference - arc, -cum, 0.5 + i * 0.12))
+        cum += arc
+    body.append('</g>')
+    if top:
+        body.append(text(cx, cy - 3, top[0][0][:10], size=9.5, fill=WHITE, family=SANS,
+                         anchor="middle", weight=600))
+        body.append(text(cx, cy + 13, "%.0f%%" % (100 * top[0][1] / total_bytes), size=12,
+                         fill=ROSE, family=SANS, anchor="middle", weight=700))
+
+    # label and share on one line per language (rather than stacked) so
+    # shrinking row_h for a fuller legend can't make consecutive rows'
+    # text collide — each row only ever needs one line's worth of height
+    lx = cx + r + sw / 2 + 24
+    legend_half_h = (len(top) - 1) * row_h / 2
+    ly0 = cy - legend_half_h
     for i, (lang, size) in enumerate(top):
         pct = 100 * size / total_bytes
-        ly = y + i * lang_row_h
-        lang_body.append(text(x0, ly + 9, lang, size=9.5, fill=WHITE, family=SANS))
-        lang_body.append(text(x1, ly + 9, "%.0f%%" % pct, size=8.5, fill=DIM, family=SANS,
-                              anchor="end"))
-        lang_body.append(rect(x0, ly + 13, x1 - x0, 4, rx=2, fill=LINE))
-        lang_body.append(rect(x0, ly + 13, (x1 - x0) * pct / 100, 4, rx=2,
-                              fill=ROSE if i == 0 else WHITE, opacity=1 if i == 0 else 0.55,
-                              cls="build", style="animation-delay:%.2fs" % (0.5 + i * 0.1)))
-    body.append('<g clip-path="url(#%s)">' % clip_id + "".join(lang_body) + '</g>')
+        ly = ly0 + i * row_h
+        color, op = ring_colors[i % len(ring_colors)]
+        label = lang if len(lang) <= 13 else lang[:12] + "…"   # max size: never overflow the row
+        body.append(rect(lx, ly - 6, 8, 8, rx=2, fill=color, opacity=op))
+        body.append(text(lx + 13, ly + 1, label, size=9.5, fill=WHITE, family=SANS))
+        body.append(text(x1, ly + 1, "%.0f%%" % pct, size=8.5, fill=DIM, family=SANS, anchor="end"))
+    y = cy + max(r + sw / 2, legend_half_h + 12) + 28
 
+    # -- commit streaks, the other half of "habits" the day/language sections
+    # don't cover — current and longest streak from the full contribution
+    # window, plus the daily rate they're built from, all already computed by
+    # collect() and otherwise unused by any panel. Sized as generously as the
+    # bars/ring above it rather than packed tight, so this closing section
+    # carries its share of the panel's height instead of trailing off thin.
+    body.append(text(x0, y, "COMMIT STREAKS", size=8, fill=DIM, family=SANS, spacing=1))
+    y += 26
+    avg_per_day = d["total"] / 365
+    streak_stats = [
+        ("flame", "Current streak", "%d day%s" % (d["streak_now"], "" if d["streak_now"] == 1 else "s")),
+        ("flame", "Best streak", "%d day%s" % (d["streak_long"], "" if d["streak_long"] == 1 else "s")),
+        ("pulse", "Commits per day", "%.1f avg" % avg_per_day),
+        ("star", "Highest in a day", "%d commits" % d["best_day"]),
+    ]
+    tile_w = (x1 - x0) / 2
+    tile_h = 58
+    for i, (icon, label, value) in enumerate(streak_stats):
+        col, row = i % 2, i // 2
+        bx, by = x0 + col * tile_w, y + row * tile_h
+        color = ROSE if label in ("Current streak", "Highest in a day") else WHITE
+        body.append(_stat_icon(icon, bx, by, color, scale=1.3))
+        body.append(text(bx + 24, by + 4, label, size=8.5, fill=DIM, family=SANS))
+        body.append(text(bx + 24, by + 21, value, size=13, fill=color, family=SANS, weight=700,
+                         cls="fade", style="animation-delay:%.2fs" % (0.1 + i * 0.06)))
+    y += tile_h * 2 + 26
+
+    H = round(y)
     o = [svg_open(W, H, "Recent coding habits")]
     o.append('<style>' + BASE_CSS + '</style>')
-    o.append(card_frame(M, M, W - 2 * M, H - 2 * M))
     o.extend(body)
     o.append('</svg>')
     return "\n".join(o)
@@ -646,13 +700,73 @@ STAT_ICONS = {
                 '<path d="M2 3.2v7.6c0 1 2.2 1.9 5 1.9s5-.9 5-1.9V3.2"/>'
                 '<path d="M2 7c0 1 2.2 1.9 5 1.9s5-.9 5-1.9"/>',
     "pulse":    '<path d="M1 8h2.3l1.4-3.8 2 6.8 1.4-4.6.9 1.6H13"/>',
+    "calendar": '<rect x="1.5" y="2.5" width="11" height="10" rx="1.5"/><path d="M1.5 5.5h11"/>'
+                '<path d="M4 1v3M10 1v3"/>',
+    "flame":    '<path d="M7 13c-2.7 0-4.6-1.7-4.6-4.1 0-1.9 1.1-2.9 1.8-4.4.3.9.8 1.5 1.5 1.5'
+                '.2-2.3 1.2-3.6 2.4-4.5-.3 1.5.2 2.7 1.1 3.7 1 1.1 2.1 1.9 2.1 3.7'
+                'C11.6 11.3 9.7 13 7 13Z"/>',
+    "check":    '<path d="M2.5 7.3 5.4 10 11.5 3.8"/>',
+    "minus":    '<path d="M3 7h8"/>',
+    "dot":      '<circle cx="7" cy="7" r="1.6"/>',
 }
 
 
-def _stat_icon(name, x, y, color):
-    return ('<g transform="translate(%.1f,%.1f)" fill="none" stroke="%s" '
+def _stat_icon(name, x, y, color, scale=1.0):
+    return ('<g transform="translate(%.1f,%.1f) scale(%.2f)" fill="none" stroke="%s" '
             'stroke-width="1.15" stroke-linecap="round" stroke-linejoin="round">%s</g>'
-            % (x, y, color, STAT_ICONS[name]))
+            % (x, y, scale, color, STAT_ICONS[name]))
+
+
+# ── license permissions/limitations/conditions, per choosealicense.com ────────
+# GitHub's own dependency-graph "Licenses" view breaks a license down this
+# way; a personal account has no dependency graph to summarise, but its
+# repos' own licenses do, so this reads that instead. Keyed by a lowercase
+# substring match against GraphQL's licenseInfo.name (e.g. "MIT License"),
+# since that's a free-text name, not a normalised SPDX id.
+# Licenses that don't grant a patent or trademark license get both listed as
+# limitations, same as "Liability"/"Warranty" — nothing in the license text
+# conveys those rights either, so a user of the code is just as limited on
+# that front. Left off wherever a permission entry above already grants it
+# (e.g. GPL's patent grant), so no license lists a term as both.
+_NO_PATENT_TRADEMARK = ["Liability", "Warranty", "Trademark use", "Patent use"]
+_PERMISSIVE_CONDITIONS = ["Copyright notice"]
+LICENSE_INFO = {
+    "mit":     (["Commercial use", "Modification", "Distribution", "Private use"],
+                _NO_PATENT_TRADEMARK, _PERMISSIVE_CONDITIONS),
+    "isc":     (["Commercial use", "Modification", "Distribution", "Private use"],
+                _NO_PATENT_TRADEMARK, _PERMISSIVE_CONDITIONS),
+    "bsd":     (["Commercial use", "Modification", "Distribution", "Private use"],
+                _NO_PATENT_TRADEMARK, _PERMISSIVE_CONDITIONS),
+    "unlicense": (["Commercial use", "Modification", "Distribution", "Private use"],
+                _NO_PATENT_TRADEMARK, []),
+    "cc0":     (["Commercial use", "Modification", "Distribution", "Private use"],
+                _NO_PATENT_TRADEMARK, []),
+    "apache":  (["Commercial use", "Modification", "Distribution", "Patent use", "Private use"],
+                ["Liability", "Trademark use", "Warranty"],
+                ["Copyright notice", "State changes"]),
+    "mozilla": (["Commercial use", "Modification", "Distribution", "Patent use", "Private use"],
+                ["Liability", "Trademark use", "Warranty"],
+                ["Copyright notice", "Disclose source", "Same license"]),
+    "affero":  (["Commercial use", "Modification", "Distribution", "Patent use", "Private use"],
+                ["Liability", "Trademark use", "Warranty"],
+                ["Copyright notice", "State changes", "Disclose source", "Network use"]),
+    "lesser":  (["Commercial use", "Modification", "Distribution", "Patent use", "Private use"],
+                ["Liability", "Trademark use", "Warranty"],
+                ["Copyright notice", "Disclose source", "State changes"]),
+    "general public": (["Commercial use", "Modification", "Distribution", "Patent use", "Private use"],
+                ["Liability", "Trademark use", "Warranty"],
+                ["Copyright notice", "State changes", "Disclose source", "Same license"]),
+}
+LICENSE_DEFAULT = (["Commercial use", "Modification", "Distribution", "Private use"],
+                    _NO_PATENT_TRADEMARK, _PERMISSIVE_CONDITIONS)
+
+
+def _license_info(name):
+    low = (name or "").lower()
+    for key, info in LICENSE_INFO.items():
+        if key in low:
+            return info
+    return LICENSE_DEFAULT
 
 
 def build_repo_stats(d):
@@ -669,12 +783,15 @@ def build_repo_stats(d):
     views_str = ("—" if views is None else
                  "%.1fk views (14d)" % (views / 1000) if (views or 0) >= 1000 else
                  "%s (14d)" % plural(views or 0, "view", "views"))
-    license_str = "Prefers %s license" % d["license"] if d["license"] else "No license set"
+
+    # license gets its own detailed section below (permissions/limitations/
+    # conditions), so this row shows account age instead of repeating it
+    joined_str = "Member since %s" % d["created"][:4]
 
     rows = [
         ("repo",     plural(d["repo_count"], "Repository", "Repositories"), True),
         ("heart",    plural(d["sponsors"], "Sponsor", "Sponsors"),          False),
-        ("tag",      license_str,                                          False),
+        ("calendar", joined_str,                                            False),
         ("star",     plural(d["stars"], "Stargazer", "Stargazers"),        False),
         ("release",  plural(d["releases"], "Release", "Releases"),         False),
         ("fork",     plural(d["forks"], "Forker", "Forkers"),              False),
@@ -684,26 +801,90 @@ def build_repo_stats(d):
         ("pulse",    views_str,                                            False),
     ]
 
+    # Two columns, five rows, instead of one long column — pairs each stat
+    # with its neighbour so the row spans the panel's full width rather than
+    # trailing off into blank space on the right, and leaves room to run the
+    # icons and type a size up.
     W = 380
-    M = 14   # card inset — see theme.card_frame for why this floats instead
-    pad_x, pad_top = 28, 24
-    row_h = 34
-    col_gap = 18
-    n_rows = len(rows) // 2
-    H = round(M * 2 + pad_top * 2 + row_h * n_rows)
-    col_w = (W - 2 * M - pad_x * 2 - col_gap) / 2
+    pad_x, pad_top = 20, 22
+    col_gap = 16
+    col_w = (W - 2 * pad_x - col_gap) / 2
+    row_h = 44
+    n_rows = -(-len(rows) // 2)
 
+    body = []
+    for i, (key, label, highlight) in enumerate(rows):
+        col, row = i % 2, i // 2
+        cx = pad_x + col * (col_w + col_gap)
+        cy = pad_top + row * row_h + row_h / 2
+        color = ROSE if highlight else DIM
+        body.append(_stat_icon(key, cx, cy - 10, color, scale=1.35))
+        body.append('<text x="%.1f" y="%.1f" font-family="%s" font-size="14" fill="%s" '
+                    'class="fade" style="animation-delay:%.2fs">%s</text>'
+                     % (cx + 26, cy + 5, SANS, ROSE if highlight else WHITE, i * 0.04, esc(label)))
+    y = pad_top + n_rows * row_h
+
+    # -- license permissions/limitations/conditions, filling the space below
+    # the stat rows the way GitHub's own dependency-graph license view does,
+    # scoped to whichever license this run's repos actually use most. Two
+    # rows here too: permissions and limitations paired side by side (the
+    # panel's two most-populated lists), conditions given the full width
+    # below since it reads better as a single spread-out line than a third
+    # cramped column.
+    y += 18
+    body.append('<path d="M%.1f %.1f H%.1f" stroke="%s" stroke-width="1"/>'
+               % (pad_x, y, W - pad_x, LINE))
+    y += 22
+    licensed = sum(1 for r in d["repos"] if r.get("license"))
+    body.append(text(pad_x, y, "MOST-USED LICENSE", size=8.5, fill=DIM, family=SANS, spacing=1))
+    body.append(text(W - pad_x, y, plural(licensed, "repo", "repos") + " licensed",
+                     size=8.5, fill=DIM, family=SANS, anchor="end"))
+    y += 24
+    top_col_w = (W - 2 * pad_x - col_gap) / 2
+    right_x = pad_x + top_col_w + col_gap
+
+    perms, limits, conds = _license_info(d["license"]) if d["license"] else ([], [], [])
+    if perms or limits or conds:
+        # row one: the license name, paired with its conditions on the
+        # right so that side of the row isn't just blank when a permissive
+        # license (often just one condition) is what's detected
+        body.append(text(pad_x, y, d["license"] or "No license detected", size=16, fill=WHITE,
+                         family=SANS, weight=700))
+        cond_h = 0
+        if conds:
+            body.append(text(right_x, y - 10, "CONDITIONS", size=8, fill=DIM, family=SANS,
+                             spacing=0.8))
+            for ii, item in enumerate(conds):
+                iy = y + ii * 17
+                body.append(_stat_icon("dot", right_x, iy - 9, MUTED, scale=1.0))
+                body.append(text(right_x + 16, iy, item, size=10, fill=WHITE, family=SANS))
+            cond_h = len(conds) * 17
+        y += max(28, cond_h + 6)
+
+        # row two: permissions paired with limitations, the panel's two
+        # busiest lists, each getting a full half-width column
+        row_cols = [("PERMISSIONS", perms, "check", ROSE), ("LIMITATIONS", limits, "minus", DIM)]
+        for ci, (clabel, items, icon, color) in enumerate(row_cols):
+            cx = pad_x + ci * (top_col_w + col_gap)
+            body.append(text(cx, y, clabel, size=8.5, fill=DIM, family=SANS, spacing=0.8))
+            for ii, item in enumerate(items):
+                iy = y + 20 + ii * 20
+                body.append(_stat_icon(icon, cx, iy - 9, color, scale=1.05))
+                body.append(text(cx + 17, iy, item, size=10.5, fill=WHITE, family=SANS))
+        y += 20 + max(len(perms), len(limits)) * 20
+    else:
+        body.append(text(pad_x, y, d["license"] or "No license detected", size=16, fill=WHITE,
+                         family=SANS, weight=700))
+        y += 28
+        body.append(text(pad_x, y, "Add a LICENSE file to a repo to show terms here.",
+                         size=10.5, fill=DIM, family=SANS))
+        y += 20
+    y += pad_top
+
+    H = round(y)
     o = [svg_open(W, H, "Repository stats")]
-    o.append(card_frame(M, M, W - 2 * M, H - 2 * M))
-    for i in range(n_rows):
-        for c in range(2):
-            key, label, highlight = rows[i * 2 + c]
-            cx = M + pad_x + c * (col_w + col_gap)
-            cy = M + pad_top + i * row_h + row_h / 2
-            color = ROSE if highlight else DIM
-            o.append(_stat_icon(key, cx, cy - 7, color))
-            o.append('<text x="%.1f" y="%.1f" font-family="%s" font-size="12.5" fill="%s">%s</text>'
-                      % (cx + 20, cy + 4.5, SANS, ROSE if highlight else WHITE, esc(label)))
+    o.append('<style>' + BASE_CSS + '</style>')
+    o.extend(body)
     o.append('</svg>')
     return "\n".join(o)
 

@@ -26,9 +26,9 @@
 
 <table>
 <tr>
-<td width="260" align="center" valign="middle"><img width="260" alt="Repository stats" src="https://gist.githubusercontent.com/nishanthsr7-eng/ad81df052c511fdf3161c25469d415e9/raw/repo-stats.svg?v=2"></td>
+<td width="320" align="center" valign="middle"><img width="320" alt="Repository stats" src="https://gist.githubusercontent.com/nishanthsr7-eng/ad81df052c511fdf3161c25469d415e9/raw/repo-stats.svg?v=3"></td>
 <td width="220" align="center" valign="middle"><img width="220" alt="" src="assets/outro.png"></td>
-<td width="260" align="center" valign="middle"><img width="260" alt="Recent coding habits" src="https://gist.githubusercontent.com/nishanthsr7-eng/ad81df052c511fdf3161c25469d415e9/raw/habits.svg?v=2"></td>
+<td width="320" align="center" valign="middle"><img width="320" alt="Recent coding habits" src="https://gist.githubusercontent.com/nishanthsr7-eng/ad81df052c511fdf3161c25469d415e9/raw/habits.svg?v=3"></td>
 </tr>
 </table>
 
