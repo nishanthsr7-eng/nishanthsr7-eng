@@ -17,12 +17,12 @@ per chart (the best day, the peak point) rather than colouring everything.
 Each panel floats as its own inset card rather than filling edge-to-edge, so
 it never has to match whatever theme the viewer's page is in.
 
-Output: dist/contribution-calendar.svg (last 6 months, as a small isometric
-skyline — one extruded tile per day), dist/activity-graph.svg (the 12-month
-trend line), dist/habits.svg (commit activity by day of week, plus top
-languages), and dist/repo-stats.svg (repo/star/fork/release/watcher/sponsor/
-package/storage/traffic counts) — all self-contained SVGs that animate
-inside an <img>.
+Output: dist/contribution-calendar.svg (last 3 months, as a small isometric
+skyline — one extruded tile per day), dist/activity-graph.svg (the same
+3-month window as bars), dist/habits.svg (commit activity by day of week,
+plus top languages), and dist/repo-stats.svg (repo/star/fork/release/
+watcher/sponsor/package/storage/traffic counts) — all self-contained SVGs
+that animate inside an <img>.
 """
 
 import argparse
@@ -35,7 +35,7 @@ import pathlib
 import re
 import urllib.request
 
-from theme import (LINE, DIM, MUTED, WHITE, ROSE, SANS, BASE_CSS, card_frame,
+from theme import (LINE, DIM, MUTED, WHITE, ROSE, SANS, BASE_CSS,
                     esc, rect, svg_open, text)
 
 USER = "nishanthsr7-eng"
@@ -46,7 +46,17 @@ W = 880
 L, R = 40, 840
 CW = R - L
 
-CAL_DAYS = 182                            # ~6 months
+# The calendar and activity graph now sit side by side as a table-style pair
+# (two inline images, not an actual <table> — see README.md) instead of each
+# spanning the full width, so both are designed at these narrower canvases
+# instead of a shrunk-down copy of the old full-width one. Uneven on
+# purpose: the calendar's grid needs the extra breadth more than the
+# 3-bar activity chart does, which stays legible — arguably reads better —
+# narrower and with thicker bars.
+CAL_W = 430
+ACT_W = 300
+
+CAL_DAYS = 91                              # ~3 months — shorter to fit the narrower box
 
 
 # ── vendored code ─────────────────────────────────────────────────────────────
@@ -298,67 +308,6 @@ def hr(o, y, x0=L, x1=R, color=LINE, weight=1):
               % (x0, y, x1, color, weight))
 
 
-def draw_activity_graph(o, x0, x1, ytop, base, months, accent=WHITE, peak_color=ROSE):
-    """The 12-month contribution trend as a flat gradient-area line chart —
-    neutral line and fill, with rose spent only on the single peak point.
-    Shared by the standalone activity-graph.svg export (currently its only
-    caller, kept as its own function since the geometry is non-trivial).
-    """
-    peak = max((v for _, v in months), default=1) or 1
-    step = (x1 - x0) / (len(months) - 1 or 1)
-    pts = [(x0 + i * step, base - (base - ytop) * v / peak) for i, (_, v) in enumerate(months)]
-    path, plen = spline(pts)
-
-    o.append('<defs><linearGradient id="actgrad" x1="0" y1="0" x2="0" y2="1">'
-             '<stop offset="0%" stop-color="' + accent + '" stop-opacity="0.36"/>'
-             '<stop offset="100%" stop-color="' + accent + '" stop-opacity="0"/>'
-             '</linearGradient></defs>')
-    for gy in (ytop, (ytop + base) / 2, base):
-        o.append('<path d="M%.1f %.1f H%.1f" stroke="%s" stroke-width="1" '
-                 'stroke-dasharray="2 4" opacity="0.4"/>' % (x0, gy, x1, LINE))
-
-    o.append('<path d="%s L%.1f,%.1f L%.1f,%.1f Z" fill="url(#actgrad)" class="fade" '
-             'style="animation-delay:.5s"/>' % (path, pts[-1][0], base, pts[0][0], base))
-    o.append('<path d="%s" fill="none" stroke="%s" stroke-width="2" '
-             'stroke-linecap="round" stroke-linejoin="round" '
-             'stroke-dasharray="%.0f" stroke-dashoffset="%.0f" class="draw"/>'
-             % (path, accent, plen, plen))
-
-    for i, ((ym, v), (px, py)) in enumerate(zip(months, pts)):
-        top = v == peak
-        if v:
-            o.append('<circle cx="%.1f" cy="%.1f" r="%s" fill="%s" class="pop" '
-                     'style="animation-delay:%.2fs"/>'
-                     % (px, py, "3.4" if top else "2.4", peak_color if top else accent,
-                        .5 + i * .05))
-        if top:
-            o.append(text(px, py - 10, str(v), size=9.5, fill=peak_color, anchor="middle",
-                          weight=600, family=SANS, cls="fade", style="animation-delay:1.1s"))
-        o.append(text(px, base + 16, dt.date.fromisoformat(ym + "-01").strftime("%b")[0],
-                      size=8.5, fill=DIM, anchor="middle"))
-
-    # a small glow travelling the trend line on an endless loop — "activity
-    # moving through time", layered under the static peak marker above
-    o.append('<g><animateMotion dur="6s" repeatCount="indefinite" path="%s"/>'
-             '<circle r="7" fill="%s" opacity="0.16"/>'
-             '<circle r="2.6" fill="%s"/></g>' % (path, peak_color, accent))
-
-
-def spline(pts):
-    """Catmull-Rom through `pts`, emitted as cubic beziers, plus its length."""
-    d = ["M%.1f,%.1f" % pts[0]]
-    length = 0.0
-    for i in range(len(pts) - 1):
-        p0 = pts[max(i - 1, 0)]
-        p1, p2 = pts[i], pts[i + 1]
-        p3 = pts[min(i + 2, len(pts) - 1)]
-        c1 = (p1[0] + (p2[0] - p0[0]) / 6.0, p1[1] + (p2[1] - p0[1]) / 6.0)
-        c2 = (p2[0] - (p3[0] - p1[0]) / 6.0, p2[1] - (p3[1] - p1[1]) / 6.0)
-        d.append("C%.1f,%.1f %.1f,%.1f %.1f,%.1f" % (c1 + c2 + p2))
-        length += ((p2[0] - p1[0]) ** 2 + (p2[1] - p1[1]) ** 2) ** 0.5
-    return " ".join(d), length * 1.25
-
-
 # ═══════════════════════════════════════════════════════ isometric grid ══════
 # One "little building" per day: an extruded diamond tile, height by
 # contribution count. Neutral white at every level; rose is spent on exactly
@@ -369,14 +318,12 @@ def _poly(pts, fill, opacity):
     return '<path d="%s" fill="%s" opacity="%.3f"/>' % (d, fill, opacity)
 
 
-def iso_tile(gx, gy, hw, hh, eh, fill, base_op, delay=None):
+def iso_tile(gx, gy, hw, hh, eh, fill, base_op):
     """Ground point (gx, gy), footprint half-extents (hw, hh), extrusion
     height eh. eh=0 renders as a flat ground tile — a day with no
-    contributions still shows up, just level with the ground.
-
-    `delay`, when given, wraps the tile in a `.build` group so it grows up
-    out of the ground on load — staggered per-tile, the skyline rises one
-    building at a time instead of appearing all at once.
+    contributions still shows up, just level with the ground. Static —
+    the calendar wraps each tile's own animation around these parts
+    itself (see the "dayglow" chase light in build_calendar).
     """
     N = (gx, gy - eh - hh)
     E = (gx + hw, gy - eh)
@@ -388,30 +335,32 @@ def iso_tile(gx, gy, hw, hh, eh, fill, base_op, delay=None):
         parts.append(_poly([Wp, S, Sg, Wg], fill, base_op * 0.42))   # left, darkest
         parts.append(_poly([S, E, Eg, Sg], fill, base_op * 0.68))    # right, mid
     parts.append(_poly([N, E, S, Wp], fill, base_op))                # top, brightest
-    if delay is None:
-        return parts
-    return ['<g class="build" style="animation-delay:%.3fs">' % delay
-            + "".join(parts) + '</g>']
+    return parts
 
 
 # ═══════════════════════════════════════════════════════════ charts ══════════
 
 def build_calendar(d):
-    """Contributions, last 6 months, as a small isometric skyline, with the
-    weekday rhythm spread alongside it. Just these two — no other stats, no
-    section icons, no card.
+    """Contributions, last 3 months, as a small isometric skyline — just the
+    one chart, no section icons, no card. Used to run the weekday rhythm
+    bars alongside it, but that's the same weekday breakdown the habits
+    panel's COMMIT ACTIVITY BY DAY bars already show over the full year, so
+    dropping it here removes a repeat rather than a unique view. Sized to
+    sit beside the narrower activity graph as a table-style pair — see
+    CAL_W/ACT_W — rather than spanning the full width on its own.
     """
+    W, L, R = CAL_W, 20, CAL_W - 20
+    CW = R - L
     cal = d["cal"]
     o = []
     top_y = 44
 
-    o.append(text(L, top_y, "Contributions, last 6 months", size=11, fill=MUTED, family=SANS))
+    o.append(text(L, top_y, "Contributions, last 3 months", size=11, fill=MUTED, family=SANS))
     o.append(text(R, top_y, dt.date.today().isoformat(), size=8.5, fill=DIM,
                   anchor="end", family=SANS))
 
     cal_top = top_y + 30
-    gap, rhythm_w = 40, 190
-    cal_w = CW - gap - rhythm_w
+    cal_w = CW
 
     pad = cal[0][0].weekday() if cal else 0
     slots = [None] * pad + list(cal)
@@ -419,12 +368,13 @@ def build_calendar(d):
     cols = max(1, -(-len(slots) // 7))
     hw = cal_w / (cols + rows)
     hh = hw * 0.55
-    max_eh = 22
+    max_eh = 13
 
     cells = [(idx // 7, idx % 7, slot[0], slot[1])
              for idx, slot in enumerate(slots) if slot is not None]
 
     cal_bottom = cal_top
+    loop_dur = 0
     if cells:
         peak_c = max(v for _, _, _, v in cells) or 1
         gxs = [(c - r) * hw for c, r, _, _ in cells]
@@ -450,7 +400,14 @@ def build_calendar(d):
                     o.append(text(mx, my - hh - max_eh - 8, day.strftime("%b").upper(),
                                   size=7.5, fill=DIM, anchor="middle", spacing=0.8))
 
-        for col, row, day, v in cells:
+        # a slow chase light: one day glows at a time, in date order, then
+        # hands off to the next — a single shared @keyframes rule plays on
+        # every tile at the same duration (one full lap = one tile-glow
+        # each), staggered only by animation-delay, so the "handoff" falls
+        # out of the stagger instead of needing per-tile timelines
+        step = 0.08
+        loop_dur = len(cells) * step
+        for idx, (col, row, day, v) in enumerate(cells):
             gx, gy = ox + (col - row) * hw, oy + (col + row) * hh
             is_best = (col, row, day, v) == best and v > 0
             eh = max_eh * v / peak_c if v else 0
@@ -458,86 +415,91 @@ def build_calendar(d):
                 eh = 4
             fill = ROSE if is_best else WHITE
             base_op = 0.95 if is_best else LEVEL_OP[level(v)]
-            delay = col * 0.03 + row * 0.012
-            o.extend(iso_tile(gx, gy, hw, hh, eh, fill, base_op, delay=delay))
+            o.append('<g class="dayglow" style="animation-delay:%.3fs">' % (idx * step)
+                     + "".join(iso_tile(gx, gy, hw, hh, eh, fill, base_op))
+                     + '</g>')
 
         cal_bottom = oy + max(gys) + hh
 
-    # ── weekday rhythm, spread alongside the same 6-month window ───────────
-    wk = collections.Counter()
-    for day, v in cal:
-        wk[day.weekday()] += v
-    wk_totals = [wk.get(i, 0) for i in range(7)]
-    peak_wk = max(wk_totals) or 1
+    H = round(cal_bottom + 34)
 
-    wkx0 = L + cal_w + gap
-    o.append(text(wkx0, top_y, "Weekday rhythm", size=11, fill=MUTED, family=SANS))
-    bar_gap = 10
-    bar_w = (rhythm_w - bar_gap * 6) / 7
-    base_y = cal_bottom
-    max_h = max(20, base_y - cal_top - 6)
-    for i, v in enumerate(wk_totals):
-        bx_ = wkx0 + i * (bar_w + bar_gap)
-        h = max(3, max_h * v / peak_wk)
-        is_best = v == peak_wk and v > 0
-        o.append(rect(bx_, base_y - h, bar_w, h, rx=bar_w / 2,
-                      fill=ROSE if is_best else WHITE, opacity=0.95 if is_best else 0.3,
-                      cls="build", style="animation-delay:%.2fs" % (0.5 + i * 0.07)))
-        o.append(text(bx_ + bar_w / 2, base_y + 14, "MTWTFSS"[i], size=8,
-                      fill=ROSE if is_best else DIM, anchor="middle",
-                      cls="fade", style="animation-delay:%.2fs" % (0.6 + i * 0.07)))
-
-    H = round(max(cal_bottom, base_y) + 34)
-    M = 14   # card inset — leaves a transparent margin so the card floats
-             # on the page instead of matching it
-
-    # a faint diagonal band of light drifting across the whole skyline on an
-    # endless loop, clipped to the panel's own rounded outline
-    o.append(
-        '<defs>'
-        '<clipPath id="calsweep"><rect x="%d" y="%d" width="%d" height="%d" rx="14"/></clipPath>'
-        '<linearGradient id="moonbeam" x1="0" y1="0" x2="1" y2="0">'
-        '<stop offset="0%%" stop-color="#ffffff" stop-opacity="0"/>'
-        '<stop offset="50%%" stop-color="#ffffff" stop-opacity="0.05"/>'
-        '<stop offset="100%%" stop-color="#ffffff" stop-opacity="0"/></linearGradient>'
-        '</defs>' % (M, M, W - 2 * M, H - 2 * M))
-    o.append(
-        '<g clip-path="url(#calsweep)" style="mix-blend-mode:screen">'
-        '<g transform="rotate(22 %d %d)">'
-        '<rect class="moonsweep" x="-260" y="-200" width="160" height="%d" fill="url(#moonbeam)"/>'
-        '</g></g>' % (W // 2, H // 2, H + 400))
-
-    head = [svg_open(W, H, "Contributions - last 6 months")]
+    # no card frame — sits directly on the page background, same as the
+    # repo-stats/outro/habits row below it, instead of floating as its own
+    # boxed panel
+    head = [svg_open(W, H, "Contributions - last 3 months")]
     head.append('<style>' + BASE_CSS + '''
-  .moonsweep { animation:moonsweep 8s ease-in-out infinite; }
-  @keyframes moonsweep { 0% { transform:translateX(0); } 100% { transform:translateX(1400px); } }
-''' + '</style>')
-    head.append(card_frame(M, M, W - 2 * M, H - 2 * M))
+  .dayglow { animation-name:dayglow; animation-timing-function:linear;
+             animation-iteration-count:infinite; animation-duration:%.2fs; }
+  @keyframes dayglow {
+    0%%   { filter:brightness(1) drop-shadow(0 0 0 rgba(247,118,142,0)); }
+    1%%   { filter:brightness(2.3) drop-shadow(0 0 6px rgba(247,118,142,0.9)); }
+    3%%   { filter:brightness(1) drop-shadow(0 0 0 rgba(247,118,142,0)); }
+  }
+  @media (prefers-reduced-motion: reduce) { .dayglow { animation:none; } }
+''' % max(loop_dur, 0.01) + '</style>')
     return "\n".join(head + o + ['</svg>'])
 
 
-def build_activity_graph(d):
-    """The 12-month contribution trend, standalone."""
-    Wg, Hg = 880, 220
-    Lg, Rg = 40, 840
-    o = [svg_open(Wg, Hg, "Activity graph - 12 month trend")]
-    o.append('<style>' + BASE_CSS + '''
-  .pop  { transform-box:fill-box; transform-origin:center; opacity:0;
-          animation:pop .4s cubic-bezier(.2,1.4,.4,1) forwards; }
-  @keyframes pop { from { opacity:0; transform:scale(.4); } to { opacity:1; transform:scale(1); } }
-  .draw { animation:draw 1.6s cubic-bezier(.3,.7,.3,1) forwards; }
-  @keyframes draw { to { stroke-dashoffset:0; } }
-</style>''')
-    Mg = 14   # card inset — see build_calendar for why this floats instead
-    o.append(card_frame(Mg, Mg, Wg - 2 * Mg, Hg - 2 * Mg))
-    o.append(text(Lg, 26, "Activity graph, last 12 months", size=11, fill=MUTED, family=SANS))
-    o.append(text(Rg, 26, dt.date.today().isoformat(), size=8.5, fill=DIM,
+def build_activity_graph(d, target_h=None):
+    """Monthly commit activity as bars, narrower than the contribution
+    calendar it sits beside as a table-style pair (see CAL_W/ACT_W) — a
+    3-bar chart doesn't need the calendar's grid-driven breadth, and
+    staying narrower leaves room for the bars themselves to run thicker
+    rather than thin. A smooth line chart reads poorly once it's this
+    narrow with only a few points on it — bars stay legible however
+    compressed the box gets, so the chart type changed along with the
+    width. Matches the calendar's 3-month window rather than a longer,
+    differently-scoped one.
+
+    `target_h`, when given, pins this panel's height to match the
+    calendar's own — the calendar's height falls out of its tile grid
+    geometry (not a constant, since the 3-month window's day-of-week
+    padding shifts its column count slightly depending on what today is),
+    so main() measures the calendar's real height first and threads it
+    through here rather than the two panels each guessing at a shared
+    constant that would drift apart on the days the grid gains a column.
+    """
+    W, L, R = ACT_W, 20, ACT_W - 20
+    CW = R - L
+    months = list(d["monthly"].items())[-3:]
+    peak = max((v for _, v in months), default=1) or 1
+
+    top_y = 44
+    o = []
+    o.append(text(L, top_y, "Activity, last 3 months", size=11, fill=MUTED, family=SANS))
+    o.append(text(R, top_y, dt.date.today().isoformat(), size=8.5, fill=DIM,
                   anchor="end", family=SANS))
-    hr(o, 38, x0=Lg, x1=Rg)
-    months = list(d["monthly"].items())[-12:]
-    draw_activity_graph(o, Lg, Rg, 62, Hg - 38, months)
-    o.append('</svg>')
-    return "\n".join(o)
+
+    bar_top = top_y + 34
+    overhead = bar_top + 44   # header above + peak label/month row below the bars
+    bar_h_max = max(40, (target_h - overhead) if target_h else 90)
+    bar_base = bar_top + bar_h_max
+    n = max(1, len(months))
+    gap = 34
+    bar_w = min(26, (CW - gap * (n - 1)) / n)
+    row_w = n * bar_w + (n - 1) * gap
+    row_x0 = L + (CW - row_w) / 2   # centered — bar_w is capped, so it may not fill CW
+
+    for i, (ym, v) in enumerate(months):
+        bx = row_x0 + i * (bar_w + gap)
+        h = max(4, bar_h_max * v / peak)
+        is_peak = v == peak and v > 0
+        color = ROSE if is_peak else WHITE
+        o.append(rect(bx, bar_base - h, bar_w, h, rx=7, fill=color,
+                      opacity=0.95 if is_peak else 0.32,
+                      cls="build", style="animation-delay:%.2fs" % (0.15 + i * 0.12)))
+        if v:
+            o.append(text(bx + bar_w / 2, bar_base - h - 10, str(v), size=10.5, fill=color,
+                          anchor="middle", weight=700, family=SANS,
+                          cls="fade", style="animation-delay:%.2fs" % (0.5 + i * 0.12)))
+        month_name = dt.date.fromisoformat(ym + "-01").strftime("%b")
+        o.append(text(bx + bar_w / 2, bar_base + 20, month_name, size=9.5,
+                      fill=ROSE if is_peak else DIM, anchor="middle", family=SANS))
+
+    H = target_h if target_h else round(bar_base + 44)
+    head = [svg_open(W, H, "Activity - last 3 months")]
+    head.append('<style>' + BASE_CSS + '</style>')
+    return "\n".join(head + o + ['</svg>'])
 
 
 def build_habits(d):
@@ -909,12 +871,20 @@ def main():
 
     out = pathlib.Path(args.out)
     out.mkdir(parents=True, exist_ok=True)
-    for name, fn in (("contribution-calendar", build_calendar),
-                     ("activity-graph", build_activity_graph),
-                     ("habits", build_habits),
-                     ("repo-stats", build_repo_stats)):
+
+    # calendar built first so its (data-independent, but grid-shape-dependent)
+    # height can be measured and handed to the activity graph — see
+    # build_activity_graph's target_h docstring for why that beats each
+    # panel guessing at a shared constant
+    cal_svg = build_calendar(d)
+    cal_h = int(re.search(r'height="(\d+)"', cal_svg).group(1))
+
+    for name, svg in (("contribution-calendar", cal_svg),
+                       ("activity-graph", build_activity_graph(d, target_h=cal_h)),
+                       ("habits", build_habits(d)),
+                       ("repo-stats", build_repo_stats(d))):
         p = out / ("%s.svg" % name)
-        p.write_text(fn(d), encoding="utf8")
+        p.write_text(svg, encoding="utf8")
         print("  %-22s %7d bytes" % (p.name, p.stat().st_size))
 
 
