@@ -109,7 +109,7 @@ GQL = """
 query($login:String!,$from:DateTime!,$to:DateTime!,$since:GitTimestamp!){
   user(login:$login){
     name login createdAt
-    sponsors{ totalCount }
+    sponsors(first:1){ totalCount }
     packages(first:1){ totalCount }
     repositories(first:100, ownerAffiliations:OWNER, isFork:false, privacy:PUBLIC,
                  orderBy:{field:PUSHED_AT, direction:DESC}){
@@ -155,9 +155,9 @@ def collect(token):
                 for w in cc["contributionCalendar"]["weeks"]
                 for d in w["contributionDays"]}
         repos = [{"name": r["name"], "stars": r["stargazerCount"],
-                  "forks": r["forkCount"], "disk_kb": r["diskUsage"] or 0,
-                  "releases": r["releases"]["totalCount"],
-                  "watchers": r["watchers"]["totalCount"],
+                  "forks": r.get("forkCount") or 0, "disk_kb": r.get("diskUsage") or 0,
+                  "releases": (r.get("releases") or {}).get("totalCount", 0),
+                  "watchers": (r.get("watchers") or {}).get("totalCount", 0),
                   "license": (r.get("licenseInfo") or {}).get("name"),
                   "topics": [t["topic"]["name"] for t in r["repositoryTopics"]["nodes"]],
                   "langs": {e["node"]["name"]: e["size"] for e in r["languages"]["edges"]}}
