@@ -1,0 +1,71 @@
+name: Panels
+
+on:
+  schedule: [{ cron: "0 18 * * *" }]     # 18:00 UTC == 23:30 IST daily
+  workflow_dispatch:
+  # Rebuild when the generator changes, but not when the README is edited.
+  push:
+    branches: [main]
+    paths:
+      - ".github/scripts/**"
+      - ".github/workflows/panels.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      # The panels are drawn from the GraphQL API; no third-party action is
+      # involved, so nothing but this repository's own code touches the token.
+      - name: Build panels
+        env:
+          METRICS_TOKEN: ${{ secrets.METRICS_TOKEN }}
+        working-directory: .github/scripts
+        run: python build_panels.py --out "$GITHUB_WORKSPACE/dist"
+
+      # The SVGs live in a secret gist rather than in this repository, so the
+      # workflow never commits and the history stays free of bot noise.
+      - name: Upload to gist
+        env:
+          GH_TOKEN: ${{ secrets.METRICS_TOKEN }}
+          GIST_ID: ${{ secrets.METRICS_GIST }}
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json, os, pathlib, urllib.request
+
+          files = sorted(pathlib.Path("dist").glob("*.svg"))
+          assert len(files) == 2, (
+              "expected 2 files (contribution-calendar, activity-graph), found %d" % len(files))
+
+          payload = {"files": {f.name: {"content": f.read_text(encoding="utf8")}
+                               for f in files}}
+          for f in files:
+              print("  %-22s %7d bytes" % (f.name, f.stat().st_size))
+
+          # One-time cleanup: the gist still holds files from earlier designs
+          # (the four original per-panel files, then one unified metrics.svg).
+          # Setting a file to null deletes it. Harmless once they're gone —
+          # the lookup just never matches again.
+          for stale in ("panel-overview.svg", "panel-calendar.svg",
+                        "panel-stack.svg", "panel-signals.svg", "metrics.svg"):
+              payload["files"].setdefault(stale, None)
+
+          req = urllib.request.Request(
+              "https://api.github.com/gists/" + os.environ["GIST_ID"],
+              data=json.dumps(payload).encode(), method="PATCH",
+              headers={"Authorization": "Bearer " + os.environ["GH_TOKEN"],
+                       "Accept": "application/vnd.github+json",
+                       "X-GitHub-Api-Version": "2022-11-28",
+                       "User-Agent": "profile-panels"})
+          with urllib.request.urlopen(req, timeout=60) as r:
+              print("gist updated:", r.status)
+          PY
