@@ -43,8 +43,9 @@ jobs:
           import json, os, pathlib, urllib.request
 
           files = sorted(pathlib.Path("dist").glob("*.svg"))
-          assert len(files) == 2, (
-              "expected 2 files (contribution-calendar, activity-graph), found %d" % len(files))
+          assert len(files) == 4, (
+              "expected 4 files (contribution-calendar, activity-graph, habits, repo-stats), "
+              "found %d" % len(files))
 
           headers = {"Authorization": "Bearer " + os.environ["GH_TOKEN"],
                      "Accept": "application/vnd.github+json",
@@ -65,10 +66,11 @@ jobs:
               print("  %-22s %7d bytes" % (f.name, f.stat().st_size))
 
           # One-time cleanup: drop files left over from earlier designs (the
-          # four original per-panel files, then one unified metrics.svg) —
-          # but only the ones that are actually still there.
+          # four original per-panel files, one unified metrics.svg, then the
+          # stats.svg panel later replaced by habits.svg) — but only the ones
+          # that are actually still there.
           stale = {"panel-overview.svg", "panel-calendar.svg", "panel-stack.svg",
-                   "panel-signals.svg", "metrics.svg"} & existing
+                   "panel-signals.svg", "metrics.svg", "stats.svg"} & existing
           for name in stale:
               payload["files"][name] = None
           if stale:

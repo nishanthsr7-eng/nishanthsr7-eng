@@ -143,10 +143,6 @@ def defs(PH):
         '<clipPath id="panel"><rect x="%d" y="%d" width="%d" height="%d" rx="%d"/></clipPath>'
         '<clipPath id="photo"><rect x="%d" y="%d" width="%d" height="%d" rx="20"/></clipPath>'
 
-        '<linearGradient id="canvas" x1="0" y1="0" x2="0.4" y2="1">'
-        '<stop offset="0%%" stop-color="#0d1117"/>'
-        '<stop offset="100%%" stop-color="#161b22"/></linearGradient>'
-
         # the one highlight where light lands on the glass — neutral white;
         # this plus the frost grain is the entire "glass" cue, no tint blob
         '<radialGradient id="highlight" cx="0.5" cy="0.5" r="0.5">'
@@ -249,8 +245,9 @@ def build():
     o.append(defs(PH))
     o.append(STYLE)
 
-    # -- ground + the sheet ---------------------------------------------------
-    o.append(rect(0, 0, W, H, fill="url(#canvas)", rx=18))
+    # -- the sheet — a floating card, not an edge-to-edge canvas, so it never
+    # has to match the surrounding page: it reads as a card on any background,
+    # light or dark, with its own drop shadow doing the separation
     o.append(rect(PX, PY, PW, PH, rx=RX, fill="#161b22", opacity=0.92,
                   style="filter:url(#drop)"))
 

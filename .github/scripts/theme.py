@@ -87,6 +87,20 @@ BASE_CSS = f"""
 """
 
 
+def card_frame(x, y, w, h, r=14, fill=BG, stroke=LINE):
+    """A floating card, inset from the SVG's own edges with a soft drop
+    shadow — not an edge-to-edge fill. That way it reads as a card sitting
+    on top of the page rather than a background trying (and failing) to
+    match whatever theme the viewer is on.
+    """
+    return (
+        '<defs><filter id="panelshadow" x="-20%" y="-20%" width="140%" height="140%">'
+        '<feDropShadow dx="0" dy="10" stdDeviation="14" flood-color="#000000" '
+        'flood-opacity="0.35"/></filter></defs>'
+        + rect(x, y, w, h, rx=r, fill=fill, style="filter:url(#panelshadow)")
+        + rect(x + 0.5, y + 0.5, w - 1, h - 1, rx=r, fill="none", stroke=stroke, sw=1))
+
+
 def svg_open(w, h, title):
     return (f'<svg xmlns="http://www.w3.org/2000/svg" '
             f'xmlns:xlink="http://www.w3.org/1999/xlink" '
