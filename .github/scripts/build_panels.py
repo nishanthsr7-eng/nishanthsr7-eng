@@ -801,7 +801,7 @@ def build_repo_stats(d):
     body.append(text(pad_x, y, "MOST-USED LICENSE", size=8.5, fill=DIM, family=SANS, spacing=1))
     body.append(text(W - pad_x, y, plural(licensed, "repo", "repos") + " licensed",
                      size=8.5, fill=DIM, family=SANS, anchor="end"))
-    y += 24
+    y += 30
     top_col_w = (W - 2 * pad_x - col_gap) / 2
     right_x = pad_x + top_col_w + col_gap
 
@@ -814,14 +814,14 @@ def build_repo_stats(d):
                          family=SANS, weight=700))
         cond_h = 0
         if conds:
-            body.append(text(right_x, y - 10, "CONDITIONS", size=8, fill=DIM, family=SANS,
+            body.append(text(right_x, y - 15, "CONDITIONS", size=8, fill=DIM, family=SANS,
                              spacing=0.8))
             for ii, item in enumerate(conds):
-                iy = y + ii * 17
+                iy = y + 2 + ii * 18
                 body.append(_stat_icon("dot", right_x, iy - 9, MUTED, scale=1.0))
                 body.append(text(right_x + 16, iy, item, size=10, fill=WHITE, family=SANS))
-            cond_h = len(conds) * 17
-        y += max(28, cond_h + 6)
+            cond_h = len(conds) * 18
+        y += max(36, cond_h + 14)
 
         # row two: permissions paired with limitations, the panel's two
         # busiest lists, each getting a full half-width column
@@ -830,10 +830,10 @@ def build_repo_stats(d):
             cx = pad_x + ci * (top_col_w + col_gap)
             body.append(text(cx, y, clabel, size=8.5, fill=DIM, family=SANS, spacing=0.8))
             for ii, item in enumerate(items):
-                iy = y + 20 + ii * 20
+                iy = y + 24 + ii * 21
                 body.append(_stat_icon(icon, cx, iy - 9, color, scale=1.05))
                 body.append(text(cx + 17, iy, item, size=10.5, fill=WHITE, family=SANS))
-        y += 20 + max(len(perms), len(limits)) * 20
+        y += 24 + max(len(perms), len(limits)) * 21
     else:
         body.append(text(pad_x, y, d["license"] or "No license detected", size=16, fill=WHITE,
                          family=SANS, weight=700))

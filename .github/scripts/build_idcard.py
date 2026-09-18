@@ -30,6 +30,7 @@ ROSE      = "#f7768e"     # base rose-red
 ROSE_SOFT = "#ff9bb0"     # lightest — LANGUAGES
 ROSE_MID  = "#e2597a"     # mid       — DATABASES
 ROSE_DEEP = "#c9445f"     # deepest   — WEB
+ROSE_PLUM = "#c25a8a"     # plum      — DESIGN
 WHITE     = "#f5f5f6"
 LABEL_OP  = 0.44           # small-caps section labels: white, faded
 VALUE_OP  = 0.88           # body copy: white, near-solid
@@ -39,8 +40,7 @@ NAME     = "Nishanth S"
 LOCATION = "Bengaluru, India"
 GENDER   = "Male"
 ABOUT = [
-    "Applied AI engineer. I build agentic systems and RAG pipelines — and the",
-    "database internals underneath them when the abstraction has to come off.",
+    "AIML Engineer · Product and Web Designer · Full-Stack Developer",
 ]
 
 # Vertical katakana down the right gutter - the name, transliterated. Ties the
@@ -56,14 +56,14 @@ SKILLS = [
         "FastAPI", "Flask", "React", "Next.js", "TypeScript", "Tailwind CSS",
         "REST APIs", "WebSockets", "SSE", "Gradio"]),
     ("AI / ML", ROSE, [
-        "PyTorch", "TensorFlow", "Scikit-learn", "XGBoost",
-        "Hugging Face Transformers", "Torchvision", "Ultralytics", "OpenCV",
-        "NLTK", "spaCy", "LibROSA",
-        "Unsloth", "PEFT", "ONNX Runtime", "vLLM", "SentenceTransformers",
-        "LangChain", "LangGraph", "LlamaIndex", "TRL",
-        "RAG", "Agentic Workflows", "LoRA/QLoRA", "4-bit Quantization",
-        "Flash Attention", "Transfer Learning", "Knowledge Distillation",
-        "Multimodal Learning", "MCP"]),
+        "PyTorch", "Hugging Face Transformers", "vLLM", "ONNX Runtime",
+        "Unsloth", "PEFT", "TRL",
+        "LoRA/QLoRA", "4-bit Quantization", "Flash Attention",
+        "Knowledge Distillation",
+        "LangChain", "LangGraph", "LlamaIndex", "SentenceTransformers",
+        "RAG", "Agentic Workflows", "MCP"]),
+    ("DESIGN", ROSE_PLUM, [
+        "Figma", "Framer", "Motion Design", "Typography"]),
 ]
 
 # No webfont can be fetched from inside an <img>-loaded SVG, so the CJK stack is
@@ -80,16 +80,17 @@ PAD     = 32
 L       = PX + PAD                # content left edge
 R       = PX + PW - PAD           # content right edge
 
-PHOTO_S = 148
-PHOTO_X, PHOTO_Y = L, PY + 30
-FIELD_X = PHOTO_X + PHOTO_S + 28
+PHOTO_S = 118
+PHOTO_R = 16                      # corner radius, tightened with the size
+PHOTO_X, PHOTO_Y = L, PY + 45
+FIELD_X = L + 176
 
 # mascot badge, top-right — robot.png is a pre-cut 520x300 (26:15) transparent
 # PNG; sized down to sit clear of both the field column and the kana gutter
-ROBOT_W  = 165
+ROBOT_W  = 148
 ROBOT_H  = round(ROBOT_W * 300 / 520)
 ROBOT_X  = R - ROBOT_W - 22
-ROBOT_Y  = PY + 24
+ROBOT_Y  = PY + 50
 
 NAME_LBL_Y  = PHOTO_Y + 6
 NAME_Y      = PHOTO_Y + 40
@@ -141,7 +142,7 @@ def defs(PH):
     return (
         '<defs>'
         '<clipPath id="panel"><rect x="%d" y="%d" width="%d" height="%d" rx="%d"/></clipPath>'
-        '<clipPath id="photo"><rect x="%d" y="%d" width="%d" height="%d" rx="20"/></clipPath>'
+        '<clipPath id="photo"><rect x="%d" y="%d" width="%d" height="%d" rx="16"/></clipPath>'
 
         # the one highlight where light lands on the glass — neutral white;
         # this plus the frost grain is the entire "glass" cue, no tint blob
@@ -190,9 +191,6 @@ def defs(PH):
         '<stop offset="0%%" stop-color="#ffffff" stop-opacity="0.32"/>'
         '<stop offset="55%%" stop-color="#ffffff" stop-opacity="0.05"/>'
         '<stop offset="100%%" stop-color="#ffffff" stop-opacity="0.18"/></linearGradient>'
-        '<linearGradient id="psheen" x1="0" y1="0" x2="0.7" y2="1">'
-        '<stop offset="0%%" stop-color="#ffffff" stop-opacity="0.18"/>'
-        '<stop offset="42%%" stop-color="#ffffff" stop-opacity="0"/></linearGradient>'
 
         # frost: fine achromatic grain over the whole sheet — this is the
         # single most important cue for "glass" rather than "flat panel"
@@ -202,6 +200,13 @@ def defs(PH):
         '<filter id="drop" x="-20%%" y="-20%%" width="140%%" height="140%%">'
         '<feDropShadow dx="0" dy="16" stdDeviation="22" flood-color="#000000" '
         'flood-opacity="0.5"/></filter>'
+        # kana rail glow: a tight halo plus a wider bloom, so the rose
+        # reads as lit rather than simply tinted
+        '<filter id="kanaglow" x="-120%%" y="-120%%" width="340%%" height="340%%">'
+        '<feGaussianBlur in="SourceGraphic" stdDeviation="4" result="b1"/>'
+        '<feGaussianBlur in="SourceGraphic" stdDeviation="9" result="b2"/>'
+        '<feMerge><feMergeNode in="b2"/><feMergeNode in="b1"/>'
+        '<feMergeNode in="SourceGraphic"/></feMerge></filter>'
         '<pattern id="grid" width="26" height="26" patternUnits="userSpaceOnUse">'
         '<path d="M26 0 H0 V26" fill="none" stroke="#ffffff" stroke-width="0.5" '
         'opacity="0.045"/></pattern>'
@@ -217,15 +222,13 @@ def defs(PH):
 # (an <animate> on the namefade stops, defined in defs()) and a per-character
 # flicker on the kana watermark, below.
 STYLE = '''<style>
-  .psweep { animation:psweep 4.2s cubic-bezier(.4,0,.3,1) infinite; }
-  @keyframes psweep { 0% { transform:translateY(-160px); }
-                       55%,100% { transform:translateY(160px); } }
-  .kana   { animation:kana 2.6s ease-in-out infinite; }
-  @keyframes kana { 0%, 100% { opacity:0.08; } 50% { opacity:0.22; } }
+  .kana   { animation:kana 2.6s ease-in-out infinite;
+            fill:{ROSE}; filter:url(#kanaglow); }
+  @keyframes kana { 0%, 100% { opacity:0.18; } 50% { opacity:0.45; } }
   @media (prefers-reduced-motion: reduce) {
-    .psweep, .kana { animation:none; }
+    .kana { animation:none; }
   }
-</style>'''
+</style>'''.replace("{ROSE}", ROSE)
 
 
 def build():
@@ -265,7 +268,7 @@ def build():
     for i, ch in enumerate(KANA):
         o.append('<text class="kana" style="animation-delay:' + format(i * 0.35, ".2f")
                  + 's" x="' + str(kx) + '" y="' + str(ky + i * 38) + '" font-family="'
-                 + JP + '" font-size="24" fill="#ffffff" opacity="0.08" '
+                 + JP + '" font-size="24" fill="#ffffff" opacity="0.32" '
                  'text-anchor="middle">' + esc(ch) + '</text>')
 
     # -- photo — the one place motion still lives ------------------------
@@ -274,10 +277,8 @@ def build():
              + str(PHOTO_S) + '" height="' + str(PHOTO_S)
              + '" preserveAspectRatio="xMidYMid slice" '
                'xlink:href="data:image/jpeg;base64,' + b64 + '"/>')
-    o.append('<g class="psweep">' + rect(PHOTO_X, PHOTO_Y - 40, PHOTO_S, 60,
-                                        fill="url(#psheen)") + '</g>')
     o.append('</g>')
-    o.append(rect(PHOTO_X, PHOTO_Y, PHOTO_S, PHOTO_S, rx=20, fill="none",
+    o.append(rect(PHOTO_X, PHOTO_Y, PHOTO_S, PHOTO_S, rx=PHOTO_R, fill="none",
                   stroke="url(#pring)", sw=1.4))
 
     # -- mascot badge, top-right — static, pre-cut transparent PNG ----------
