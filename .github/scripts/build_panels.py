@@ -55,6 +55,15 @@ CW = R - L
 # narrower and with thicker bars.
 CAL_W = 430
 ACT_W = 300
+# Bottom row: repo stats and habits are laid out 336 wide, then each gets this
+# much empty canvas on the side facing the outro image. The README gives both
+# 37%, so the panels reach the outer edges and the spare room sits evenly on
+# either side of the image instead of at the row's ends.
+SIDE_GAP = 78
+# Both bottom-row panels share one height and one visual top/bottom line:
+# first thing drawn starts at BOTTOM_TOP, last text baseline sits on
+# BOTTOM_BASE, and each panel spaces its own contents evenly in between.
+BOTTOM_H, BOTTOM_TOP, BOTTOM_BASE = 460, 18, 442
 
 CAL_DAYS = 91                              # ~3 months — shorter to fit the narrower box
 
@@ -126,7 +135,7 @@ query($login:String!,$from:DateTime!,$to:DateTime!,$since:GitTimestamp!){
                  orderBy:{field:PUSHED_AT, direction:DESC}){
       totalCount
       nodes{
-        name stargazerCount forkCount isFork diskUsage pushedAt
+        name stargazerCount forkCount isFork isPrivate diskUsage pushedAt
         licenseInfo{ name }
         releases{ totalCount }
         watchers{ totalCount }
@@ -166,6 +175,7 @@ def collect(token):
                 for w in cc["contributionCalendar"]["weeks"]
                 for d in w["contributionDays"]}
         repos = [{"name": r["name"], "stars": r["stargazerCount"], "pushed": r.get("pushedAt"),
+                  "private": bool(r.get("isPrivate")),
                   "forks": r.get("forkCount") or 0, "disk_kb": r.get("diskUsage") or 0,
                   "releases": (r.get("releases") or {}).get("totalCount", 0),
                   "watchers": (r.get("watchers") or {}).get("totalCount", 0),
@@ -267,6 +277,7 @@ def _collect_public():
             continue
         langs = json.loads(_get(r["languages_url"]))
         repos.append({"name": r["name"], "stars": r["stargazers_count"], "pushed": r.get("pushed_at"),
+                      "private": bool(r.get("private")),
                       "forks": r.get("forks_count", 0), "disk_kb": r.get("size", 0),
                       # releases/watchers need per-repo calls the public path skips
                       "releases": 0, "watchers": 0,
@@ -545,69 +556,64 @@ def build_habits(d):
     Languages are drawn as a hollow ring (stacked stroke-dasharray circles)
     rather than bars: its footprint is fixed by the ring's radius, not by how
     many languages there are or how long their names run, so nothing can
-    overflow the panel regardless of the data — the same goal the earlier
-    bar-and-clip version was reaching for, solved by the chart shape itself
-    instead of a clipPath.
+    overflow the panel regardless of the data.
+
+    The four sections (title, day bars, languages, streaks) each have a fixed
+    height; whatever is left of the shared BOTTOM_TOP..BOTTOM_BASE span is
+    split evenly between them, so the panel covers exactly the same vertical
+    stretch as the repo-stats panel on the other side of the outro image.
     """
-    W = 380
-    pad = 16   # no card border to clear anymore, just a small breathing margin
-    x0, x1 = pad, W - pad
+    W, H = 336, BOTTOM_H
+    # contents run flush to both side edges (2px only so strokes aren't clipped);
+    # SIDE_GAP puts the space next to the outro image, same as repo stats
+    x0, x1 = 2, W - 2
 
-    # Built as a body first, walking a `y` cursor down the page, so the final
-    # height comes from what actually got drawn (see build_calendar/graph's
-    # history — a fixed-offset version of this panel once overlapped its own
-    # sections when a size assumption drifted).
+    HEADER_H, DAYS_H, LANGS_H, STREAKS_H = 17.5, 73, 96, 97
+    gap = (BOTTOM_BASE - BOTTOM_TOP - HEADER_H - DAYS_H - LANGS_H - STREAKS_H) / 3
+
     body = []
-    y = pad
-    body.append(text(x0, y + 12, "Recent coding habits", size=15, fill=WHITE, family=SANS,
+    y = BOTTOM_TOP
+    body.append(text(x0, y + 14.5, "Recent coding habits", size=15, fill=WHITE, family=SANS,
                      weight=700))
-    body.append(text(x1, y + 12, "last 12 months", size=10.5, fill=DIM, family=SANS, anchor="end"))
-    y += 40
+    body.append(text(x1, y + 14.5, "last 12 months", size=10.5, fill=DIM, family=SANS, anchor="end"))
+    y += HEADER_H + gap
 
-    # -- commit activity by day of week, as real bars (not the calendar's
-    # capsule rhythm bars — a taller, flatter-topped bar reads more like a
-    # standalone chart now that it's the headline row instead of one of three)
-    body.append(text(x0, y, "COMMIT ACTIVITY BY DAY", size=10, fill=DIM, family=SANS, spacing=1))
+    # -- commit activity by day of week, as real bars
+    body.append(text(x0, y - 7, "COMMIT ACTIVITY BY DAY", size=10, fill=DIM, family=SANS, spacing=1))
     wk_src = d["commit_weekday"] if sum(d["commit_weekday"].values()) else d["weekday"]
     wk = [wk_src.get(i, 0) for i in range(7)]
     peak_wk = max(wk) or 1
-    bar_gap = 10
+    bar_gap, bar_max = 10, 40
     bar_w = (x1 - x0 - bar_gap * 6) / 7
-    base = y + 16 + 46
+    base = y + 16 + bar_max
     for i, v in enumerate(wk):
         bx = x0 + i * (bar_w + bar_gap)
-        bh = max(3, 46 * v / peak_wk)
+        bh = max(3, bar_max * v / peak_wk)
         is_peak = v == peak_wk and v > 0
         body.append(rect(bx, base - bh, bar_w, bh, rx=3,
                          fill=ROSE if is_peak else WHITE, opacity=0.95 if is_peak else 0.32,
                          cls="build", style="animation-delay:%.2fs" % (0.1 + i * 0.05)))
-        body.append(text(bx + bar_w / 2, base + 17, "MTWTFSS"[i], size=10.5,
+        body.append(text(bx + bar_w / 2, base + 15, "MTWTFSS"[i], size=10,
                          fill=ROSE if is_peak else DIM, anchor="middle"))
-    y = base + 17 + 24
+    y += DAYS_H + gap
 
     # -- top languages, by byte share of owned repos, as a hollow ring -------
-    # Capped at MAX_LANGS regardless of how many languages the account
-    # actually has (a prolific account can easily have 15+), and the legend
-    # row height then shrinks a step at a time as that count grows, so the
-    # list's own footprint stays inside a fixed max height instead of
-    # pushing the commit-streaks section below it further down every time
-    # someone picks up a new language.
-    body.append(text(x0, y, "LANGUAGE ACTIVITY", size=10, fill=DIM, family=SANS, spacing=1))
-    y += 16
+    # Capped at MAX_LANGS however many languages the account has, with the
+    # legend row height shrinking as that count grows, so the section keeps
+    # its fixed height.
+    body.append(text(x0, y - 7, "LANGUAGE ACTIVITY", size=10, fill=DIM, family=SANS, spacing=1))
     MAX_LANGS = 6
     top = d["langs"].most_common(MAX_LANGS)
     total_bytes = sum(v for _, v in top) or 1
     # languages that round to 0% are noise (a template file here, a config
-    # there) - drop them from ring and legend; shares stay out of the full top
+    # there) - drop them from ring and legend
     top = [(lang, v) for lang, v in top if 100 * v / total_bytes >= 0.5]
-    # rose + neutrals only, at falling opacity, rather than reaching for new
-    # hues — stays within the panel's rose/white/gray palette at any count
+    # rose + neutrals only, at falling opacity, rather than reaching for new hues
     ring_colors = [(ROSE, 1), (WHITE, 0.9), (MUTED, 0.8), (DIM, 0.85), (ROSE, 0.55), (WHITE, 0.5)]
-    LEGEND_MAX_H = 120   # the hard cap "set a max size" enforces
-    row_h = min(24, LEGEND_MAX_H / max(1, len(top)))
+    row_h = min(22, 110 / max(1, len(top)))
 
-    r, sw = 38, 15
-    cx, cy = x0 + r + sw / 2, y + r + sw / 2
+    r, sw = 35, 8      # a thin ring - the legend beside it carries the numbers
+    cx, cy = x0 + r + sw / 2, y + 16 + r + sw / 2
     circumference = 2 * math.pi * r
     body.append('<g transform="rotate(-90 %.1f %.1f)">' % (cx, cy))
     cum = 0.0
@@ -622,57 +628,53 @@ def build_habits(d):
         cum += arc
     body.append('</g>')
     if top:
-        body.append(text(cx, cy - 3, top[0][0][:10], size=11, fill=WHITE, family=SANS,
+        body.append(text(cx, cy - 2, top[0][0][:10], size=10.5, fill=WHITE, family=SANS,
                          anchor="middle", weight=600))
-        body.append(text(cx, cy + 15, "%.0f%%" % (100 * top[0][1] / total_bytes), size=14,
+        body.append(text(cx, cy + 14, "%.0f%%" % (100 * top[0][1] / total_bytes), size=13,
                          fill=ROSE, family=SANS, anchor="middle", weight=700))
 
-    # label and share on one line per language (rather than stacked) so
-    # shrinking row_h for a fuller legend can't make consecutive rows'
-    # text collide — each row only ever needs one line's worth of height
+    # label and share on one line per language, centred on the ring
     lx = cx + r + sw / 2 + 24
-    legend_half_h = (len(top) - 1) * row_h / 2
-    ly0 = cy - legend_half_h
+    ly0 = cy - (len(top) - 1) * row_h / 2
     for i, (lang, size) in enumerate(top):
         pct = 100 * size / total_bytes
         ly = ly0 + i * row_h
         color, op = ring_colors[i % len(ring_colors)]
         label = lang if len(lang) <= 13 else lang[:12] + "…"   # max size: never overflow the row
-        body.append(rect(lx, ly - 8, 10, 10, rx=2, fill=color, opacity=op))
-        body.append(text(lx + 16, ly + 2, label, size=12, fill=WHITE, family=SANS))
-        body.append(text(x1, ly + 2, "%.0f%%" % pct, size=11, fill=DIM, family=SANS, anchor="end"))
-    y = cy + max(r + sw / 2, legend_half_h + 12) + 28
+        body.append(rect(lx, ly - 7, 9, 9, rx=2, fill=color, opacity=op))
+        body.append(text(lx + 15, ly + 2, label, size=11.5, fill=WHITE, family=SANS))
+        body.append(text(x1, ly + 2, "%.0f%%" % pct, size=10.5, fill=DIM, family=SANS, anchor="end"))
+    y += LANGS_H + gap
 
-    # -- commit streaks, the other half of "habits" the day/language sections
-    # don't cover — current and longest streak from the full contribution
-    # window, plus the daily rate they're built from, all already computed by
-    # collect() and otherwise unused by any panel. Sized as generously as the
-    # bars/ring above it rather than packed tight, so this closing section
-    # carries its share of the panel's height instead of trailing off thin.
-    body.append(text(x0, y, "COMMIT STREAKS", size=10, fill=DIM, family=SANS, spacing=1))
-    y += 28
+    # -- commit streaks: current and longest streak from the full contribution
+    # window, plus active days and the best single day
+    body.append(text(x0, y + 7, "COMMIT STREAKS", size=10, fill=DIM, family=SANS, spacing=1))
     streak_stats = [
         ("flame", "Current streak", "%d day%s" % (d["streak_now"], "" if d["streak_now"] == 1 else "s")),
         ("flame", "Best streak", "%d day%s" % (d["streak_long"], "" if d["streak_long"] == 1 else "s")),
         ("pulse", "Active days", "%d day%s" % (d["active_days"], "" if d["active_days"] == 1 else "s")),
         ("star", "Highest in a day", "%d commits" % d["best_day"]),
     ]
-    tile_w = (x1 - x0) / 2
-    tile_h = 62
+    tile_h = 50
+    # box layout: the right column is pushed out until its widest entry ends
+    # exactly on the panel's right edge, instead of starting at the midpoint
+    right_w = max(28 + max(text_w(lbl, 10), text_w(val, 16, bold=True))
+                  for _, lbl, val in streak_stats[1::2])
+    col_x = (x0, x1 - right_w)
     for i, (icon, label, value) in enumerate(streak_stats):
         col, row = i % 2, i // 2
-        bx, by = x0 + col * tile_w, y + row * tile_h
+        bx, by = col_x[col], y + 20 + row * tile_h
         color = ROSE if label in ("Current streak", "Highest in a day") else WHITE
-        body.append(_stat_icon(icon, bx, by, color, scale=1.5))
-        body.append(text(bx + 30, by + 6, label, size=10.5, fill=DIM, family=SANS))
-        body.append(text(bx + 30, by + 26, value, size=17, fill=color, family=SANS, weight=700,
+        body.append(_stat_icon(icon, bx, by, color, scale=1.4))
+        body.append(text(bx + 28, by + 6, label, size=10, fill=DIM, family=SANS))
+        body.append(text(bx + 28, by + 26, value, size=16, fill=color, family=SANS, weight=700,
                          cls="fade", style="animation-delay:%.2fs" % (0.1 + i * 0.06)))
-    y += tile_h * 2 + 26
 
-    H = round(y)
-    o = [svg_open(W, H, "Recent coding habits")]
+    o = [svg_open(W + SIDE_GAP, H, "Recent coding habits")]
     o.append('<style>' + BASE_CSS + '</style>')
+    o.append('<g transform="translate(%d,0)">' % SIDE_GAP)   # gap on the left, toward the image
     o.extend(body)
+    o.append('</g>')
     o.append('</svg>')
     return "\n".join(o)
 
@@ -706,6 +708,28 @@ STAT_ICONS = {
     "minus":    '<path d="M3 7h8"/>',
     "dot":      '<circle cx="7" cy="7" r="1.6"/>',
 }
+
+
+# Rough advance widths for the system sans stack, as a fraction of the font
+# size - close enough to line a column's right edge up with the panel's edge
+# (an <img>-loaded SVG can't measure its own text).
+_NARROW, _WIDE = set("ijlt.,:;'!|()[] 1rf"), set("mwMW@")
+
+
+def text_w(s, size, bold=False):
+    w = 0.0
+    for ch in s:
+        if ch in _NARROW:
+            w += 0.30
+        elif ch in _WIDE:
+            w += 0.82
+        elif ch.isupper():
+            w += 0.64
+        elif ch.isdigit():
+            w += 0.56
+        else:
+            w += 0.52
+    return w * size * (1.12 if bold else 1.0)
 
 
 def _stat_icon(name, x, y, color, scale=1.0):
@@ -758,39 +782,52 @@ def build_repo_stats(d):
         langs = {k: v for k, v in r["langs"].items() if k not in IGNORE_LANGS} or r["langs"]
         return max(langs, key=langs.get) if langs else None
 
-    recent = sorted((r for r in d["repos"] if r.get("pushed") and r["name"] != USER),
+    # never list a private repo or this profile repo itself - the queries
+    # already ask for public repos only, this is the belt to that brace
+    recent = sorted((r for r in d["repos"]
+                     if r.get("pushed") and not r.get("private")
+                     and r["name"].lower() != USER.lower()),
                     key=lambda r: r["pushed"], reverse=True)[:5]
     # the same rose/neutral steps as the habits ring, so a language keeps
     # one colour across both panels
     ring = [lang for lang, _ in d["langs"].most_common(6)]
     shades = [(ROSE, 1), (WHITE, 0.9), (MUTED, 0.8), (DIM, 0.85), (ROSE, 0.55), (WHITE, 0.5)]
 
-    W, H = 380, 474
-    pad_x = 20
-    col_gap = 16
-    col_w = (W - 2 * pad_x - col_gap) / 2
-    stat_h = 38
-    repo_h = 34
+    # Same width and height as the habits panel, so the two sit as a matched
+    # pair around the outro image.
+    W, H = 336, BOTTOM_H
+    pad_x = 2          # flush to both edges; the README spaces it from the outro image
+    # box layout: left column on the left edge, right column pushed out until
+    # its widest label ends exactly on the right edge
+    col_x = (pad_x, W - pad_x - max(27 + text_w(lbl, 14.5) for _, lbl, _ in stats[1::2]))
+    # one row height for the stat grid and the repo list alike, stretched so
+    # the first icon's top lands on BOTTOM_TOP and the last line's baseline on
+    # BOTTOM_BASE - the same span the habits panel fills
     n_stat_rows = -(-len(stats) // 2)
-    content_h = n_stat_rows * stat_h + 30 + 26 + len(recent) * repo_h
-    y = (H - content_h) / 2
+    gap_above, gap_below, label_gap = 18, 26, 6     # divider, section label, list
+    n_rows = n_stat_rows + len(recent)
+    seps = gap_above + (gap_below + label_gap if recent else 0)
+    last_base = 4.5 if recent else 5                # text baseline below row centre
+    row_h = (BOTTOM_BASE - BOTTOM_TOP - 9.5 - last_base - seps) / max(1, n_rows - 1)
+    stat_h = repo_h = row_h
+    y = BOTTOM_TOP + 9.5 - row_h / 2
 
     body = []
     for i, (key, label, highlight) in enumerate(stats):
         col, row = i % 2, i // 2
-        cx = pad_x + col * (col_w + col_gap)
+        cx = col_x[col]
         cy = y + row * stat_h + stat_h / 2
         body.append(_stat_icon(key, cx, cy - 9.5, ROSE if highlight else MUTED, scale=1.35))
         body.append('<text x="%.1f" y="%.1f" font-family="%s" font-size="14.5" fill="%s" '
                     'class="fade" style="animation-delay:%.2fs">%s</text>'
                     % (cx + 27, cy + 5, SANS, ROSE if highlight else WHITE, i * 0.04, esc(label)))
-    y += n_stat_rows * stat_h + 14
+    y += n_stat_rows * stat_h + gap_above
     body.append('<path d="M%d %.1f H%d" stroke="%s" stroke-width="1"/>' % (pad_x, y, W - pad_x, LINE))
-    y += 30
+    y += gap_below
 
     if recent:
         body.append(text(pad_x, y, "RECENTLY PUSHED", size=10, fill=DIM, family=SANS, spacing=1))
-        y += 8
+        y += label_gap
         for i, r in enumerate(recent):
             ry = y + i * repo_h + repo_h / 2
             lang = main_lang(r)
@@ -804,7 +841,7 @@ def build_repo_stats(d):
                         + text(W - pad_x, ry + 4.5, meta, size=11, fill=DIM, family=SANS, anchor="end")
                         + "</g>")
 
-    o = [svg_open(W, H, "Repository stats")]
+    o = [svg_open(W + SIDE_GAP, H, "Repository stats")]   # gap on the right, toward the image
     o.append('<style>' + BASE_CSS + '</style>')
     o.extend(body)
     o.append('</svg>')
