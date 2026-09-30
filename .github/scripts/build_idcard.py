@@ -1,334 +1,306 @@
-"""Builds assets/id-card.svg - a frosted-glass profile panel.
+"""Builds assets/id-card.svg - a torii-at-dusk scene carrying name, location,
+gender and about.
 
-Static by design. The panel holds facts that change on the order of years, so it
+Static by design. The card holds facts that change on the order of years, so it
 is generated once and committed rather than rebuilt nightly; that keeps the hero
 image alive even if the panel workflow ever fails. Re-run this script after
-changing your avatar or any field below.
+changing any field below.
 
     python .github/scripts/build_idcard.py
 
-The panel itself is still: a frosted sheet with a turbulence grain, a single
-soft white highlight where light would hit the glass, a bright rim, and one
-diagonal gloss sweep laid on top like lacquer — all static gradients and
-filters, no motion. The only thing that moves is the photo, which gets a slow
-light sheen sliding down behind the clip.
+Depth comes from layering, back to front: sky and a few stars, a rose sun with
+cloud bands drifting across it, a far range, Fuji, a pagoda hill, far mist, the
+near ridge, water, the torii on its rocks, near mist, a small flock of birds, and
+a cherry branch swaying in from the top-right corner. Each nearer layer is darker
+and moves faster. Petals fall over everything. All motion is CSS keyframes, so
+it runs inside GitHub's <img> context; nothing here fetches fonts or images.
 """
 
-import base64
 import pathlib
+import random
 
-from theme import MONO, SANS, esc, rect, svg_open, text
+from theme import BG, LINE, MONO, WHITE, esc
 
 HERE = pathlib.Path(__file__).parent
 OUT = HERE.parent.parent / "assets" / "id-card.svg"
 
-# -- Palette ------------------------------------------------------------------
-# Rose-red and white only — no blue/cyan/purple/green. Four shades of rose
-# carry the category accents; every other line of text is white at a weight
-# chosen for hierarchy (full opacity for values, faded for small caps labels).
-ROSE      = "#f7768e"     # base rose-red
-ROSE_SOFT = "#ff9bb0"     # lightest — LANGUAGES
-ROSE_MID  = "#e2597a"     # mid       — DATABASES
-ROSE_DEEP = "#c9445f"     # deepest   — WEB
-ROSE_PLUM = "#c25a8a"     # plum      — DESIGN
-WHITE     = "#f5f5f6"
-LABEL_OP  = 0.44           # small-caps section labels: white, faded
-VALUE_OP  = 0.88           # body copy: white, near-solid
-
-# -- Panel contents ----------------------------------------------------------
+# -- Card contents ------------------------------------------------------------
 NAME     = "Nishanth S"
 LOCATION = "Bengaluru, India"
 GENDER   = "Male"
-ABOUT = [
-    "AIML Engineer · Product and Web Designer · Full-Stack Developer",
-]
+ABOUT    = "AIML Engineer · Product and Web Designer · Full-Stack Developer"
+KANA     = "ニシャント"          # the name, transliterated, down the left edge
+GREETING = "ようこそ"
 
-# Vertical katakana down the right gutter - the name, transliterated. Ties the
-# panel to the README's opening greeting.
-KANA = "ニシャント"
+ACCENT = "#e07a90"                # a quieter rose, for the kana and rule only
 
-SKILLS = [
-    ("LANGUAGES", ROSE_SOFT, [
-        "Python", "C", "SQL"]),
-    ("DATABASES", ROSE_MID, [
-        "PostgreSQL", "MySQL", "MongoDB", "ChromaDB"]),
-    ("WEB", ROSE_DEEP, [
-        "FastAPI", "Flask", "React", "Next.js", "TypeScript", "Tailwind CSS",
-        "REST APIs", "WebSockets", "SSE", "Gradio"]),
-    ("AI / ML", ROSE, [
-        "PyTorch", "Hugging Face Transformers", "vLLM", "ONNX Runtime",
-        "Unsloth", "PEFT", "TRL",
-        "LoRA/QLoRA", "4-bit Quantization", "Flash Attention",
-        "Knowledge Distillation",
-        "LangChain", "LangGraph", "LlamaIndex", "SentenceTransformers",
-        "RAG", "Agentic Workflows", "MCP"]),
-    ("DESIGN", ROSE_PLUM, [
-        "Figma", "Framer", "Motion Design", "Typography"]),
-]
-
-# No webfont can be fetched from inside an <img>-loaded SVG, so the CJK stack is
-# built entirely from faces that ship with Windows, macOS and most Linux distros.
-JP = ("'Yu Gothic','Hiragino Kaku Gothic ProN','Hiragino Sans','Noto Sans JP',"
-      "'Noto Sans CJK JP',Meiryo,'MS PGothic',sans-serif")
+# Every face here ships with Windows/macOS - an <img>-loaded SVG can't fetch fonts.
+MINCHO = ("'Yu Mincho',YuMincho,'Hiragino Mincho ProN','Noto Serif JP','Noto Serif CJK JP',"
+          "'MS PMincho',serif")
 
 # -- Geometry -----------------------------------------------------------------
-W       = 880
-PX, PY  = 26, 26
-PW      = W - 2 * PX
-RX      = 24
-PAD     = 32
-L       = PX + PAD                # content left edge
-R       = PX + PW - PAD           # content right edge
+W, H = 880, 360
+HZ = 252                          # horizon
+SX, SY, SR = 702, 168, 60         # sun
+TX = 702                          # torii centre
 
-PHOTO_S = 118
-PHOTO_R = 16                      # corner radius, tightened with the size
-PHOTO_X, PHOTO_Y = L, PY + 45
-FIELD_X = L + 176
+CSS = """
+  .rise { opacity:0; animation:rise .9s cubic-bezier(.2,.7,.3,1) forwards; }
+  .grow { transform-box:fill-box; transform-origin:0 50%; transform:scaleX(0);
+          animation:grow 1s cubic-bezier(.2,.7,.3,1) forwards; }
+  .tw   { animation:tw 3.2s ease-in-out infinite; }
+  .vk   { writing-mode:vertical-rl; }
+  @keyframes rise { from { opacity:0; transform:translateY(10px); } to { opacity:1; transform:translateY(0); } }
+  @keyframes grow { to { transform:scaleX(1); } }
+  @keyframes tw   { 0%,100% { opacity:.15; } 50% { opacity:.9; } }
 
-# mascot badge, top-right — robot.png is a pre-cut 520x300 (26:15) transparent
-# PNG; sized down to sit clear of both the field column and the kana gutter
-ROBOT_W  = 148
-ROBOT_H  = round(ROBOT_W * 300 / 520)
-ROBOT_X  = R - ROBOT_W - 22
-ROBOT_Y  = PY + 50
+  .sun  { transform-box:fill-box; transform-origin:center; animation:sun 9s ease-in-out infinite; }
+  @keyframes sun { 0%,100% { opacity:.55; transform:scale(1); } 50% { opacity:.8; transform:scale(1.06); } }
+  .cloud { animation:cloud ease-in-out infinite alternate; }
+  @keyframes cloud { from { transform:translateX(-50px); } to { transform:translateX(50px); } }
+  .mist { animation:mist ease-in-out infinite alternate; }
+  @keyframes mist { from { transform:translateX(-60px); opacity:.6; } to { transform:translateX(60px); opacity:1; } }
+  .branch { transform-origin:880px 0px; animation:sway 7s ease-in-out infinite; }
+  @keyframes sway { 0%,100% { transform:rotate(-1.4deg); } 50% { transform:rotate(1.6deg); } }
+  .bloom { transform-box:fill-box; transform-origin:center; animation:bloom 4s ease-in-out infinite; }
+  @keyframes bloom { 0%,100% { transform:scale(1); } 50% { transform:scale(1.08); } }
+  .fly { animation:fly linear infinite; }
+  @keyframes fly { 0% { transform:translate(0,0); opacity:0; } 10% { opacity:.7; } 85% { opacity:.7; }
+                   100% { transform:translate(-400px,-26px); opacity:0; } }
+  .flap { transform-box:fill-box; transform-origin:center; animation:flap .7s ease-in-out infinite; }
+  @keyframes flap { 0%,100% { transform:scaleY(1); } 50% { transform:scaleY(-.5); } }
+  .petal { animation:fall linear infinite; }
+  @keyframes fall { 0%   { transform:translate(0,-40px) rotate(0deg); opacity:0; }
+                    8%   { opacity:1; }
+                    50%  { transform:translate(-70px,180px) rotate(200deg); }
+                    92%  { opacity:1; }
+                    100% { transform:translate(-150px,420px) rotate(420deg); opacity:0; } }
 
-NAME_LBL_Y  = PHOTO_Y + 6
-NAME_Y      = PHOTO_Y + 40
-RULE1_Y     = PHOTO_Y + 56
-LG_LBL_Y    = PHOTO_Y + 78
-LG_VAL_Y    = PHOTO_Y + 99
-ABOUT_LBL_Y = PHOTO_Y + 124
-ABOUT_Y0    = PHOTO_Y + 146
-ABOUT_LH    = 18
-
-DIVIDER_Y = max(PHOTO_Y + PHOTO_S, ABOUT_Y0 + (len(ABOUT) - 1) * ABOUT_LH + 14) + 20
-SKILL_TOP = DIVIDER_Y + 28
-
-VAL_X   = L + 96
-VAL_W   = R - VAL_X
-VAL_SZ  = 12
-LH      = 16.5
-ROW_GAP = 12
-
-CHW = 0.60                        # mono advance width, as a fraction of em
-
-
-def wrap(items, width, size, sep=" · "):
-    """Greedy-wrap `items` into lines that fit `width` px at `size`."""
-    adv = size * CHW
-    lines, cur = [], ""
-    for it in items:
-        trial = it if not cur else cur + sep + it
-        if cur and len(trial) * adv > width:
-            lines.append(cur)
-            cur = it
-        else:
-            cur = trial
-    if cur:
-        lines.append(cur)
-    return lines
+  @media (prefers-reduced-motion: reduce) {
+    * { animation-duration:.01ms !important; animation-iteration-count:1 !important; }
+    .rise { opacity:1 !important; transform:none !important; }
+  }
+"""
 
 
-def pill(x, y, w, h, colour, r=None):
-    """A small glass chip: a colour-tinted rounded rect with a hairline
-    border, echoing pill-shaped tags on a frosted surface. Static — no glow
-    animation, just the shape."""
-    r = h / 2 if r is None else r
-    return (rect(x, y, w, h, rx=r, fill=colour, opacity=0.16)
-            + rect(x, y, w, h, rx=r, fill="none", stroke=colour, sw=1, opacity=0.55))
+# -- Scenery ------------------------------------------------------------------
+
+def stars(n, seed, y_max, x_min=0, x_max=W, r=(0.5, 1.1)):
+    rnd = random.Random(seed)
+    out = []
+    for _ in range(n):
+        cx, cy = rnd.uniform(x_min, x_max), rnd.uniform(8, y_max)
+        rr = rnd.uniform(*r)
+        out.append(f'<circle class="tw" style="animation-delay:-{rnd.uniform(0, 3.2):.2f}s;'
+                   f'animation-duration:{rnd.uniform(2.4, 4.8):.1f}s" cx="{cx:.1f}" '
+                   f'cy="{cy:.1f}" r="{rr:.2f}" fill="{WHITE}"/>')
+    return "".join(out)
 
 
-def defs(PH):
+def mountains(pts, fill, op=1):
+    d = f"M{pts[0][0]},{HZ} " + " ".join(f"L{x},{y}" for x, y in pts) + f" L{pts[-1][0]},{HZ} Z"
+    return f'<path d="{d}" fill="{fill}" opacity="{op}"/>'
+
+
+def torii(cx, base, h):
+    """Torii silhouette centred on cx, standing on y=base, height h."""
+    pw, sp, top = 7, 36, base - h
     return (
-        '<defs>'
-        '<clipPath id="panel"><rect x="%d" y="%d" width="%d" height="%d" rx="%d"/></clipPath>'
-        '<clipPath id="photo"><rect x="%d" y="%d" width="%d" height="%d" rx="16"/></clipPath>'
-
-        # the one highlight where light lands on the glass — neutral white;
-        # this plus the frost grain is the entire "glass" cue, no tint blob
-        '<radialGradient id="highlight" cx="0.5" cy="0.5" r="0.5">'
-        '<stop offset="0%%" stop-color="#ffffff" stop-opacity="0.24"/>'
-        '<stop offset="55%%" stop-color="#ffffff" stop-opacity="0.08"/>'
-        '<stop offset="100%%" stop-color="#ffffff" stop-opacity="0"/></radialGradient>'
-
-        # the sheet itself: a hair of white, brighter at the top — no colour
-        '<linearGradient id="glass" x1="0" y1="0" x2="0.25" y2="1">'
-        '<stop offset="0%%" stop-color="#ffffff" stop-opacity="0.16"/>'
-        '<stop offset="55%%" stop-color="#ffffff" stop-opacity="0.07"/>'
-        '<stop offset="100%%" stop-color="#ffffff" stop-opacity="0.04"/></linearGradient>'
-
-        # one wide diagonal highlight across the top-left third — the lacquer
-        '<linearGradient id="gloss" x1="0" y1="0" x2="1" y2="0.9">'
-        '<stop offset="0%%" stop-color="#ffffff" stop-opacity="0"/>'
-        '<stop offset="10%%" stop-color="#ffffff" stop-opacity="0.07"/>'
-        '<stop offset="24%%" stop-color="#ffffff" stop-opacity="0.035"/>'
-        '<stop offset="40%%" stop-color="#ffffff" stop-opacity="0"/>'
-        '<stop offset="100%%" stop-color="#ffffff" stop-opacity="0"/></linearGradient>'
-
-        '<linearGradient id="rim" x1="0" y1="0" x2="1" y2="1">'
-        '<stop offset="0%%" stop-color="#ffffff" stop-opacity="0.40"/>'
-        '<stop offset="42%%" stop-color="#ffffff" stop-opacity="0.08"/>'
-        '<stop offset="100%%" stop-color="#ffffff" stop-opacity="0.22"/></linearGradient>'
-        '<linearGradient id="topline" x1="0" y1="0" x2="1" y2="0">'
-        '<stop offset="0%%" stop-color="#ffffff" stop-opacity="0"/>'
-        '<stop offset="28%%" stop-color="#ffffff" stop-opacity="0.38"/>'
-        '<stop offset="72%%" stop-color="#ffffff" stop-opacity="0.16"/>'
-        '<stop offset="100%%" stop-color="#ffffff" stop-opacity="0"/></linearGradient>'
-        '<linearGradient id="hair" x1="0" y1="0" x2="1" y2="0">'
-        '<stop offset="0%%" stop-color="#ffffff" stop-opacity="0.16"/>'
-        '<stop offset="100%%" stop-color="#ffffff" stop-opacity="0.02"/></linearGradient>'
-
-        '<linearGradient id="namefade" gradientUnits="userSpaceOnUse" '
-        'x1="%d" y1="0" x2="%d" y2="0">'
-        '<stop offset="0%%" stop-color="{WHITE}">'
-        '<animate attributeName="offset" values="0%%;22%%;0%%" dur="5s" repeatCount="indefinite"/>'
-        '</stop>'
-        '<stop offset="100%%" stop-color="{ROSE}">'
-        '<animate attributeName="offset" values="100%%;78%%;100%%" dur="5s" repeatCount="indefinite"/>'
-        '</stop></linearGradient>'
-
-        '<linearGradient id="pring" x1="0" y1="0" x2="1" y2="1">'
-        '<stop offset="0%%" stop-color="#ffffff" stop-opacity="0.32"/>'
-        '<stop offset="55%%" stop-color="#ffffff" stop-opacity="0.05"/>'
-        '<stop offset="100%%" stop-color="#ffffff" stop-opacity="0.18"/></linearGradient>'
-
-        # frost: fine achromatic grain over the whole sheet — this is the
-        # single most important cue for "glass" rather than "flat panel"
-        '<filter id="grain" x="0%%" y="0%%" width="100%%" height="100%%">'
-        '<feTurbulence type="fractalNoise" baseFrequency="0.85" numOctaves="2" '
-        'stitchTiles="stitch"/><feColorMatrix type="saturate" values="0"/></filter>'
-        '<filter id="drop" x="-20%%" y="-20%%" width="140%%" height="140%%">'
-        '<feDropShadow dx="0" dy="16" stdDeviation="22" flood-color="#000000" '
-        'flood-opacity="0.5"/></filter>'
-        # kana rail glow: a tight halo plus a wider bloom, so the rose
-        # reads as lit rather than simply tinted
-        '<filter id="kanaglow" x="-120%%" y="-120%%" width="340%%" height="340%%">'
-        '<feGaussianBlur in="SourceGraphic" stdDeviation="4" result="b1"/>'
-        '<feGaussianBlur in="SourceGraphic" stdDeviation="9" result="b2"/>'
-        '<feMerge><feMergeNode in="b2"/><feMergeNode in="b1"/>'
-        '<feMergeNode in="SourceGraphic"/></feMerge></filter>'
-        '<pattern id="grid" width="26" height="26" patternUnits="userSpaceOnUse">'
-        '<path d="M26 0 H0 V26" fill="none" stroke="#ffffff" stroke-width="0.5" '
-        'opacity="0.045"/></pattern>'
-        '</defs>'
-    ).format(WHITE=WHITE, ROSE=ROSE) % (
-        PX, PY, PW, PH, RX,
-        PHOTO_X, PHOTO_Y, PHOTO_S, PHOTO_S,
-        FIELD_X, FIELD_X + 260,
+        f'<rect x="{cx-sp-pw/2}" y="{top+12}" width="{pw}" height="{h-12}"/>'
+        f'<rect x="{cx+sp-pw/2}" y="{top+12}" width="{pw}" height="{h-12}"/>'
+        f'<path d="M{cx-64},{top-4} Q{cx},{top+6} {cx+64},{top-4} L{cx+58},{top+6} '
+        f'Q{cx},{top+13} {cx-58},{top+6} Z"/>'
+        f'<rect x="{cx-52}" y="{top+22}" width="104" height="6"/>'
+        f'<rect x="{cx-3}" y="{top+10}" width="6" height="13"/>'
     )
 
 
-# Two loops now live alongside the photo sheen: the name-gradient breathe
-# (an <animate> on the namefade stops, defined in defs()) and a per-character
-# flicker on the kana watermark, below.
-STYLE = '''<style>
-  .kana   { animation:kana 2.6s ease-in-out infinite;
-            fill:{ROSE}; filter:url(#kanaglow); }
-  @keyframes kana { 0%, 100% { opacity:0.18; } 50% { opacity:0.45; } }
-  @media (prefers-reduced-motion: reduce) {
-    .kana { animation:none; }
-  }
-</style>'''.replace("{ROSE}", ROSE)
+def pagoda(cx, base, s=1.0):
+    """Five-tier pagoda silhouette standing on (cx, base)."""
+    out = []
+    y = base
+    for i in range(5):
+        bw = (15 - i * 2) * s                  # body width
+        rw = (22 - i * 2.6) * s                # roof half-width
+        bh, rh = 7 * s, 4 * s
+        out.append(f'<rect x="{cx-bw/2:.1f}" y="{y-bh:.1f}" width="{bw:.1f}" height="{bh:.1f}"/>')
+        y -= bh
+        out.append(f'<path d="M{cx-rw:.1f},{y-1*s:.1f} Q{cx-rw*.6:.1f},{y:.1f} {cx-rw*.45:.1f},{y-rh*.4:.1f} '
+                   f'L{cx:.1f},{y-rh:.1f} L{cx+rw*.45:.1f},{y-rh*.4:.1f} Q{cx+rw*.6:.1f},{y:.1f} '
+                   f'{cx+rw:.1f},{y-1*s:.1f} Z"/>')
+        y -= rh
+    out.append(f'<rect x="{cx-.8*s:.1f}" y="{y-14*s:.1f}" width="{1.6*s:.1f}" height="{14*s:.1f}"/>')
+    for k in range(3):
+        out.append(f'<rect x="{cx-2.2*s:.1f}" y="{y-(4+k*3.5)*s:.1f}" width="{4.4*s:.1f}" height="{1*s:.1f}"/>')
+    return "".join(out)
+
+
+def cloud(cx, cy, w, h, fill, op, dur, delay):
+    """A long, flat cloud bank built from overlapping ellipses."""
+    parts = [f'<ellipse cx="{cx}" cy="{cy}" rx="{w/2}" ry="{h/2}"/>',
+             f'<ellipse cx="{cx-w*.18:.0f}" cy="{cy-h*.35:.1f}" rx="{w*.22:.0f}" ry="{h*.5:.1f}"/>',
+             f'<ellipse cx="{cx+w*.12:.0f}" cy="{cy-h*.45:.1f}" rx="{w*.18:.0f}" ry="{h*.55:.1f}"/>']
+    return (f'<g class="cloud" style="animation-duration:{dur}s;animation-delay:-{delay}s" '
+            f'fill="{fill}" opacity="{op}">{"".join(parts)}</g>')
+
+
+def branch():
+    """Cherry branch reaching in from the top-right corner, swaying."""
+    limbs = [
+        "M890,-6 C860,10 830,18 800,22 C780,25 764,34 752,48",
+        "M842,14 C836,30 826,42 812,52",
+        "M800,22 C792,12 782,8 768,8",
+        "M776,30 C770,44 772,56 764,70",
+    ]
+    out = [f'<path d="{d}" fill="none" stroke="#0a080c" stroke-width="{w}" stroke-linecap="round"/>'
+           for d, w in zip(limbs, (5, 3, 2.5, 2))]
+    rnd = random.Random(8)
+    tips = [(752, 48), (812, 52), (768, 8), (764, 70), (800, 22), (842, 14), (786, 26), (826, 40)]
+    for i, (x, y) in enumerate(tips):
+        g = []
+        for _ in range(rnd.randint(4, 7)):
+            dx, dy = rnd.uniform(-9, 9), rnd.uniform(-7, 7)
+            col = rnd.choice(("#e9a9b9", "#d98ea2", "#f3c9d3", "#b8667e"))
+            g.append(f'<circle cx="{x+dx:.1f}" cy="{y+dy:.1f}" r="{rnd.uniform(2.2, 4.2):.1f}" fill="{col}"/>')
+        out.append(f'<g class="bloom" style="animation-delay:-{i*.5:.1f}s" opacity=".85">{"".join(g)}</g>')
+    # scaled up from the corner so it reads as the nearest layer
+    return (f'<g transform="translate(880,0) scale(1.7) translate(-880,0)">'
+            f'<g class="branch">{"".join(out)}</g></g>')
+
+
+def birds():
+    out = []
+    for i, (x, y, sc, dur, dl) in enumerate([(880, 92, 1, 34, 0), (900, 100, .8, 34, 1.2),
+                                             (916, 88, .7, 34, 2.1), (880, 60, .6, 46, 22)]):
+        out.append(
+            f'<g class="fly" style="animation-duration:{dur}s;animation-delay:-{dl}s">'
+            f'<g transform="translate({x},{y}) scale({sc})"><path class="flap" style="animation-delay:-{i*.2:.1f}s" '
+            'd="M-7,0 Q-3.5,-4 0,0 Q3.5,-4 7,0" fill="none" stroke="#d9c2cb" stroke-width="1.2" '
+            'stroke-linecap="round"/></g></g>')
+    return "".join(out)
+
+
+def petals():
+    rnd = random.Random(21)
+    out = []
+    for _ in range(16):
+        depth = rnd.choice([0, 0, 1, 1, 2])
+        sc = (.8, 1.2, 1.7)[depth]
+        dur = (15, 11, 8)[depth] + rnd.uniform(-1.5, 1.5)
+        op = (.3, .45, .65)[depth]
+        x = rnd.uniform(60, W + 120)
+        out.append(f'<g transform="translate({x:.0f},0)"><g class="petal" '
+                   f'style="animation-duration:{dur:.1f}s;animation-delay:-{rnd.uniform(0, dur):.1f}s">'
+                   f'<use href="#petal" transform="scale({sc})" fill="#f3c9d3" opacity="{op}"/></g></g>')
+    return "".join(out)
+
+
+def scene():
+    b = [
+        '<defs>'
+        '<linearGradient id="sky" x1="0" y1="0" x2="0" y2="1">'
+        '<stop offset="0" stop-color="#0d1117"/><stop offset=".5" stop-color="#16121c"/>'
+        '<stop offset=".8" stop-color="#2a1726"/><stop offset="1" stop-color="#361b2c"/></linearGradient>'
+        '<linearGradient id="water" x1="0" y1="0" x2="0" y2="1">'
+        '<stop offset="0" stop-color="#1e1320"/><stop offset="1" stop-color="#0c0d12"/></linearGradient>'
+        '<radialGradient id="glow"><stop offset="0" stop-color="#e07a90" stop-opacity=".26"/>'
+        '<stop offset="1" stop-color="#e07a90" stop-opacity="0"/></radialGradient>'
+        '<linearGradient id="disc" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#f6d6de"/>'
+        '<stop offset="1" stop-color="#b8566f"/></linearGradient>'
+        '<radialGradient id="fog"><stop offset="0" stop-color="#e8c3cf" stop-opacity=".16"/>'
+        '<stop offset="1" stop-color="#e8c3cf" stop-opacity="0"/></radialGradient>'
+        f'<clipPath id="skyclip"><rect width="{W}" height="{HZ}"/></clipPath>'
+        '<path id="petal" d="M0,-4 C3,-3 3.5,2 0,4 C-3.5,2 -3,-3 0,-4 Z"/>'
+        '</defs>',
+        f'<rect width="{W}" height="{H}" fill="url(#sky)"/>',
+        stars(14, 3, 140, x_min=360),
+        f'<g clip-path="url(#skyclip)">'
+        f'<circle class="sun" cx="{SX}" cy="{SY}" r="150" fill="url(#glow)"/>'
+        f'<circle cx="{SX}" cy="{SY}" r="{SR}" fill="url(#disc)" opacity=".85"/>'
+        + cloud(690, 150, 190, 9, "#2c1b29", .85, 26, 0)
+        + cloud(730, 186, 240, 11, "#301d2c", .9, 34, 12)
+        + cloud(560, 118, 140, 7, "#241824", .6, 30, 6)
+        + '</g>',
+        # far range - palest, lowest contrast
+        mountains([(330, HZ), (400, HZ-26), (450, HZ-18), (520, HZ-40), (600, HZ-30), (680, HZ-52),
+                   (760, HZ-34), (820, HZ-46), (880, HZ-30)], "#2f1f2e", .7),
+        # fuji
+        f'<path d="M380,{HZ} L490,{HZ-44} Q530,{HZ-78} 558,{HZ-86} L580,{HZ-86} Q610,{HZ-76} 650,{HZ-46} '
+        f'L880,{HZ-18} L880,{HZ} Z" fill="#261a26"/>'
+        f'<path d="M542,{HZ-80} L558,{HZ-86} L580,{HZ-86} L594,{HZ-80} L582,{HZ-74} L570,{HZ-79} '
+        f'L556,{HZ-73} Z" fill="#cfc6ca" opacity=".3"/>',
+        # pagoda hill
+        f'<path d="M740,{HZ} Q790,{HZ-34} 830,{HZ-36} Q862,{HZ-36} 890,{HZ-24} L890,{HZ} Z" fill="#150f16"/>'
+        f'<g fill="#150f16">{pagoda(824, HZ - 34, 1.25)}</g>',
+        # far mist between fuji and the ridge
+        f'<ellipse class="mist" style="animation-duration:18s" cx="600" cy="{HZ-8}" rx="300" ry="16" fill="url(#fog)"/>',
+        # near ridge
+        f'<path d="M400,{HZ} Q490,{HZ-30} 560,{HZ-16} Q620,{HZ-6} 660,{HZ-4} L880,{HZ-10} L880,{HZ} Z" fill="#1a121a"/>',
+        f'<rect y="{HZ}" width="{W}" height="{H-HZ}" fill="url(#water)"/>',
+    ]
+    tb, th = HZ + 12, 116
+    b.append(f'<g fill="#0b0a0e">{torii(TX, tb, th)}'
+             f'<ellipse cx="{TX-36}" cy="{tb+1}" rx="13" ry="4"/><ellipse cx="{TX+36}" cy="{tb+1}" rx="13" ry="4"/>'
+             f'<ellipse cx="{TX-22}" cy="{tb+3}" rx="7" ry="2.5"/><ellipse cx="{TX+52}" cy="{tb+2}" rx="6" ry="2"/></g>')
+    # near mist over the water, drifting the other way and faster
+    b.append(f'<ellipse class="mist" style="animation-duration:11s;animation-direction:alternate-reverse" '
+             f'cx="{TX}" cy="{tb+8}" rx="220" ry="12" fill="url(#fog)"/>')
+    b.append(birds())
+    b.append(branch())
+    return "".join(b)
+
+
+# -- Text ---------------------------------------------------------------------
+
+def rise(delay, inner):
+    return f'<g class="rise" style="animation-delay:{delay:.2f}s">{inner}</g>'
+
+
+def t(x, y, s, *, fam=MINCHO, size, fill=WHITE, op=None, weight=None, sp=None):
+    a = [f'x="{x}"', f'y="{y}"', f'font-family="{fam}"', f'font-size="{size}"', f'fill="{fill}"']
+    if op is not None:
+        a.append(f'opacity="{op}"')
+    if weight:
+        a.append(f'font-weight="{weight}"')
+    if sp is not None:
+        a.append(f'letter-spacing="{sp}"')
+    return f'<text {" ".join(a)}>{esc(s)}</text>'
+
+
+def label(x, y, s):
+    return t(x, y, s, fam=MONO, size=10, op=.42, sp=3)
+
+
+def text_layer():
+    """Vertical katakana down the left edge, about as a tagline under the
+    name, location/gender as a quiet footer pair - staggered in on load."""
+    x = 108
+    kana = (f'<text class="vk" x="66" y="72" font-family="{MINCHO}" font-size="13" fill="{ACCENT}" '
+            f'opacity=".7" letter-spacing="9">{esc(KANA)}</text>')
+    return "".join([
+        rise(.1, kana + f'<rect x="65" y="172" width="1" height="120" fill="{WHITE}" opacity=".12"/>'),
+        rise(.22, t(x, 88, GREETING, size=11.5, op=.45, sp=8)),
+        rise(.34, t(x - 1, 136, NAME, size=42, weight=600)),
+        f'<rect class="grow" style="animation-delay:.55s" x="{x}" y="158" width="34" height="2" '
+        f'rx="1" fill="{ACCENT}"/>',
+        rise(.66, label(x, 200, "ABOUT") + t(x, 222, ABOUT, size=13.5, op=.88)),
+        rise(.8, label(x, 270, "LOCATION") + t(x, 292, LOCATION, size=14.5, op=.92)),
+        rise(.92, label(x + 210, 270, "GENDER") + t(x + 210, 292, GENDER, size=14.5, op=.92)),
+    ])
 
 
 def build():
-    b64 = base64.b64encode((HERE / "avatar.jpg").read_bytes()).decode()
-    rb64 = base64.b64encode((HERE / "robot.png").read_bytes()).decode()
-
-    rows, y = [], SKILL_TOP
-    for lab, colour, items in SKILLS:
-        lines = wrap(items, VAL_W, VAL_SZ)
-        rows.append((lab, colour, lines, y))
-        y += len(lines) * LH + ROW_GAP
-    PB = round(y - ROW_GAP - LH + 6 + PAD)
-    PH = PB - PY
-    H = PB + PX
-
-    o = [svg_open(W, H, NAME + " - profile")]
-    o.append(defs(PH))
-    o.append(STYLE)
-
-    # -- the sheet — a floating card, not an edge-to-edge canvas, so it never
-    # has to match the surrounding page: it reads as a card on any background,
-    # light or dark, with its own drop shadow doing the separation
-    o.append(rect(PX, PY, PW, PH, rx=RX, fill="#161b22", opacity=0.92,
-                  style="filter:url(#drop)"))
-
-    o.append('<g clip-path="url(#panel)">')
-    # the one light landing on the glass — static, neutral white, no tint
-    o.append('<ellipse cx="130" cy="70" rx="280" ry="220" fill="url(#highlight)"/>')
-
-    o.append(rect(PX, PY, PW, PH, fill="url(#glass)"))
-    o.append(rect(PX, PY, PW, PH, fill="#808080", opacity=0.055, style="filter:url(#grain)"))
-    o.append(rect(PX, PY, PW, PH, fill="url(#grid)"))
-
-    # katakana sublayer down the right gutter
-    kx = PX + PW - 24
-    ky = int((PY + PB) / 2 - (len(KANA) - 1) * 19) + 6
-    for i, ch in enumerate(KANA):
-        o.append('<text class="kana" style="animation-delay:' + format(i * 0.35, ".2f")
-                 + 's" x="' + str(kx) + '" y="' + str(ky + i * 38) + '" font-family="'
-                 + JP + '" font-size="24" fill="#ffffff" opacity="0.32" '
-                 'text-anchor="middle">' + esc(ch) + '</text>')
-
-    # -- photo — the one place motion still lives ------------------------
-    o.append('<g clip-path="url(#photo)">')
-    o.append('<image x="' + str(PHOTO_X) + '" y="' + str(PHOTO_Y) + '" width="'
-             + str(PHOTO_S) + '" height="' + str(PHOTO_S)
-             + '" preserveAspectRatio="xMidYMid slice" '
-               'xlink:href="data:image/jpeg;base64,' + b64 + '"/>')
-    o.append('</g>')
-    o.append(rect(PHOTO_X, PHOTO_Y, PHOTO_S, PHOTO_S, rx=PHOTO_R, fill="none",
-                  stroke="url(#pring)", sw=1.4))
-
-    # -- mascot badge, top-right — static, pre-cut transparent PNG ----------
-    o.append('<image x="' + str(ROBOT_X) + '" y="' + str(ROBOT_Y) + '" width="'
-             + str(ROBOT_W) + '" height="' + str(ROBOT_H)
-             + '" preserveAspectRatio="xMidYMid meet" '
-               'xlink:href="data:image/png;base64,' + rb64 + '"/>')
-
-    # -- fields ----------------------------------------------------------
-    o.append(text(FIELD_X, NAME_LBL_Y, "NAME", size=9.5, fill=WHITE, spacing=3.2,
-                  opacity=LABEL_OP))
-    o.append('<text x="' + str(FIELD_X) + '" y="' + str(NAME_Y) + '" font-family="' + SANS
-             + '" font-size="30" font-weight="800" fill="url(#namefade)" '
-               'letter-spacing="-1.1">' + esc(NAME) + '</text>')
-    o.append('<path d="M' + str(FIELD_X) + ' ' + str(RULE1_Y) + ' H' + str(R)
-             + '" stroke="url(#hair)" stroke-width="1"/>')
-
-    for lx, lab, val in ((FIELD_X, "LOCATION", LOCATION), (FIELD_X + 220, "GENDER", GENDER)):
-        o.append(text(lx, LG_LBL_Y, lab, size=9.5, fill=WHITE, spacing=3.2, opacity=LABEL_OP))
-        o.append(text(lx, LG_VAL_Y, val, size=13.5, fill=WHITE, opacity=VALUE_OP))
-
-    o.append(text(FIELD_X, ABOUT_LBL_Y, "ABOUT", size=9.5, fill=WHITE, spacing=3.2,
-                  opacity=LABEL_OP))
-    for i, line in enumerate(ABOUT):
-        o.append('<text x="' + str(FIELD_X) + '" y="' + str(ABOUT_Y0 + i * ABOUT_LH)
-                 + '" font-family="' + SANS + '" font-style="italic" font-size="13" fill="'
-                 + WHITE + '" opacity="' + str(VALUE_OP) + '">' + esc(line) + '</text>')
-
-    # -- skills, category labels as small static glass chips ----------------
-    o.append('<path d="M' + str(L) + ' ' + str(DIVIDER_Y) + ' H' + str(R)
-             + '" stroke="url(#hair)" stroke-width="1"/>')
-    for lab, colour, lines, ry in rows:
-        chip_w = 14 + len(lab) * 6.6
-        o.append(pill(L, ry - 12, chip_w, 17, colour))
-        o.append(text(L + 8, ry, lab, size=9, fill=colour, spacing=1.2, weight=600))
-        for i, line in enumerate(lines):
-            o.append(text(VAL_X, ry + i * LH, line, size=VAL_SZ, fill=WHITE, opacity=VALUE_OP))
-
-    o.append('</g>')
-
-    # -- rim + top specular line, outside the clip ---------------------------
-    o.append(rect(PX, PY, PW, PH, rx=RX, fill="none", stroke="url(#rim)", sw=1.2))
-    o.append('<path d="M' + str(PX + 34) + ' ' + str(PY + 1) + ' H' + str(PX + PW - 34)
-             + '" stroke="url(#topline)" stroke-width="1.2"/>')
-    # the gloss sits on top of everything, as lacquer would — static
-    o.append('<g clip-path="url(#panel)" style="mix-blend-mode:overlay">'
-             + rect(PX, PY, PW, PH, fill="url(#gloss)") + '</g>')
-
-    o.append('</svg>')
-    return "\n".join(o)
+    title = f"{NAME} - {LOCATION} - {ABOUT}"
+    return (
+        f'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 {W} {H}" width="{W}" height="{H}" '
+        f'role="img" aria-label="{esc(title)}"><title>{esc(title)}</title>'
+        f'<style>{CSS}</style>'
+        f'<defs><clipPath id="frame"><rect x="1" y="1" width="{W-2}" height="{H-2}" rx="18"/></clipPath></defs>'
+        f'<rect width="{W}" height="{H}" rx="18" fill="{BG}"/>'
+        f'<g clip-path="url(#frame)">{scene()}{text_layer()}{petals()}</g>'
+        f'<rect x=".5" y=".5" width="{W-1}" height="{H-1}" rx="18" fill="none" stroke="{LINE}"/>'
+        '</svg>'
+    )
 
 
 if __name__ == "__main__":

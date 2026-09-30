@@ -35,7 +35,7 @@ import pathlib
 import re
 import urllib.request
 
-from theme import (LINE, DIM, MUTED, WHITE, ROSE, SANS, BASE_CSS,
+from theme import (BG, LINE, DIM, MUTED, WHITE, ROSE, SANS, BASE_CSS,
                     esc, rect, svg_open, text)
 
 USER = "nishanthsr7-eng"
@@ -126,7 +126,7 @@ query($login:String!,$from:DateTime!,$to:DateTime!,$since:GitTimestamp!){
                  orderBy:{field:PUSHED_AT, direction:DESC}){
       totalCount
       nodes{
-        name stargazerCount forkCount isFork diskUsage
+        name stargazerCount forkCount isFork diskUsage pushedAt
         licenseInfo{ name }
         releases{ totalCount }
         watchers{ totalCount }
@@ -165,7 +165,7 @@ def collect(token):
         days = {d["date"]: d["contributionCount"]
                 for w in cc["contributionCalendar"]["weeks"]
                 for d in w["contributionDays"]}
-        repos = [{"name": r["name"], "stars": r["stargazerCount"],
+        repos = [{"name": r["name"], "stars": r["stargazerCount"], "pushed": r.get("pushedAt"),
                   "forks": r.get("forkCount") or 0, "disk_kb": r.get("diskUsage") or 0,
                   "releases": (r.get("releases") or {}).get("totalCount", 0),
                   "watchers": (r.get("watchers") or {}).get("totalCount", 0),
@@ -266,7 +266,7 @@ def _collect_public():
         if r["fork"] or r["name"] == USER:
             continue
         langs = json.loads(_get(r["languages_url"]))
-        repos.append({"name": r["name"], "stars": r["stargazers_count"],
+        repos.append({"name": r["name"], "stars": r["stargazers_count"], "pushed": r.get("pushed_at"),
                       "forks": r.get("forks_count", 0), "disk_kb": r.get("size", 0),
                       # releases/watchers need per-repo calls the public path skips
                       "releases": 0, "watchers": 0,
@@ -309,33 +309,45 @@ def hr(o, y, x0=L, x1=R, color=LINE, weight=1):
 
 
 # ═══════════════════════════════════════════════════════ isometric grid ══════
-# One "little building" per day: an extruded diamond tile, height by
-# contribution count. Neutral white at every level; rose is spent on exactly
-# one tile — the single best day.
+# LOCKED DESIGN — emissive towers + diagonal wave. Settled after comparing the
+# alternatives side by side; keep the look as is and only fix bugs here.
+#
+# One "little building" per day: a solid dark tower whose top face glows,
+# brighter and taller the more was committed that day. Rose is spent on
+# exactly one tile — the single best day.
 
-def _poly(pts, fill, opacity):
+TOWER_BODY = "#1b2028"
+
+
+def _mix(a, b, t):
+    """t of colour a over (1 - t) of colour b, as a solid hex."""
+    ca = [int(a[i:i + 2], 16) for i in (1, 3, 5)]
+    cb = [int(b[i:i + 2], 16) for i in (1, 3, 5)]
+    return "#%02x%02x%02x" % tuple(round(x * t + y * (1 - t)) for x, y in zip(ca, cb))
+
+
+def _poly(pts, fill, attrs=""):
     d = "M" + " L".join("%.2f,%.2f" % p for p in pts) + " Z"
-    return '<path d="%s" fill="%s" opacity="%.3f"/>' % (d, fill, opacity)
+    return '<path d="%s" fill="%s"%s/>' % (d, fill, attrs)
 
 
-def iso_tile(gx, gy, hw, hh, eh, fill, base_op):
+def iso_tile(gx, gy, hw, hh, eh, top, right, left):
     """Ground point (gx, gy), footprint half-extents (hw, hh), extrusion
-    height eh. eh=0 renders as a flat ground tile — a day with no
-    contributions still shows up, just level with the ground. Static —
-    the calendar wraps each tile's own animation around these parts
-    itself (see the "dayglow" chase light in build_calendar).
+    height eh, one solid fill per visible face. Returns (side paths, top
+    path) so the caller can put the glowing top in its own animated group.
+    eh=0 renders as a flat ground tile — a day with no contributions still
+    shows up, just level with the ground.
     """
     N = (gx, gy - eh - hh)
     E = (gx + hw, gy - eh)
     S = (gx, gy - eh + hh)
     Wp = (gx - hw, gy - eh)
-    parts = []
+    sides = []
     if eh > 0:
         Sg, Wg, Eg = (gx, gy + hh), (gx - hw, gy), (gx + hw, gy)
-        parts.append(_poly([Wp, S, Sg, Wg], fill, base_op * 0.42))   # left, darkest
-        parts.append(_poly([S, E, Eg, Sg], fill, base_op * 0.68))    # right, mid
-    parts.append(_poly([N, E, S, Wp], fill, base_op))                # top, brightest
-    return parts
+        sides.append(_poly([Wp, S, Sg, Wg], left))
+        sides.append(_poly([S, E, Eg, Sg], right))
+    return sides, (N, E, S, Wp)
 
 
 # ═══════════════════════════════════════════════════════════ charts ══════════
@@ -368,7 +380,8 @@ def build_calendar(d):
     cols = max(1, -(-len(slots) // 7))
     hw = cal_w / (cols + rows)
     hh = hw * 0.55
-    max_eh = 13
+    max_eh = 26
+    foot = 0.82          # footprint scale — the gap keeps each day its own tower
 
     cells = [(idx // 7, idx % 7, slot[0], slot[1])
              for idx, slot in enumerate(slots) if slot is not None]
@@ -387,7 +400,11 @@ def build_calendar(d):
                 return 0
             return min(4, 1 + int(3 * (v - 1) / max(1, peak_c - 1)))
 
-        LEVEL_OP = [0.05, 0.24, 0.44, 0.66, 0.88]
+        # glow colour per level (1..4); the tops fade from this at the centre
+        # to about half-way into the tower body at the edges
+        GLOW = [None] + [_mix(WHITE, BG, t) for t in (0.30, 0.50, 0.75, 1.0)]
+        GLOW_OP = [0, 0.12, 0.12, 0.35, 0.35]
+        GROUND = _mix(WHITE, BG, 0.07)
         best = max(cells, key=lambda c: c[3])
 
         seen_months = set()
@@ -400,23 +417,33 @@ def build_calendar(d):
                     o.append(text(mx, my - hh - max_eh - 8, day.strftime("%b").upper(),
                                   size=7.5, fill=DIM, anchor="middle", spacing=0.8))
 
-        # a slow chase light: one day glows at a time, in date order, then
-        # hands off to the next — a single shared @keyframes rule plays on
-        # every tile at the same duration (one full lap = one tile-glow
-        # each), staggered only by animation-delay, so the "handoff" falls
-        # out of the stagger instead of needing per-tile timelines
-        step = 0.08
-        loop_dur = len(cells) * step
-        for idx, (col, row, day, v) in enumerate(cells):
+        # a diagonal wave: one band of light rolls across the grid, week by
+        # week, lighting each top as it passes. Every lit tile shares one
+        # @keyframes rule and one duration; only animation-delay differs,
+        # so the band falls out of the stagger instead of per-tile timelines.
+        loop_dur = 5.0
+        # solid towers overlap, so draw back to front (farther diagonals first)
+        for col, row, day, v in sorted(cells, key=lambda c: (c[0] + c[1], c[0])):
             gx, gy = ox + (col - row) * hw, oy + (col + row) * hh
-            is_best = (col, row, day, v) == best and v > 0
-            eh = max_eh * v / peak_c if v else 0
-            if v and eh < 4:
-                eh = 4
-            fill = ROSE if is_best else WHITE
-            base_op = 0.95 if is_best else LEVEL_OP[level(v)]
-            o.append('<g class="dayglow" style="animation-delay:%.3fs">' % (idx * step)
-                     + "".join(iso_tile(gx, gy, hw, hh, eh, fill, base_op))
+            lv = level(v)
+            if not lv:
+                _, top = iso_tile(gx, gy, hw * foot, hh * foot, 0, GROUND, GROUND, GROUND)
+                o.append(_poly(top, GROUND))
+                continue
+            is_best = (col, row, day, v) == best
+            # sqrt, so one huge day doesn't flatten every other tower
+            eh = max(4, max_eh * math.sqrt(v / peak_c))
+            glow = ROSE if is_best else GLOW[lv]
+            sides, top = iso_tile(gx, gy, hw * foot, hh * foot, eh, None,
+                                  _mix(TOWER_BODY, BG, 0.9), _mix(TOWER_BODY, BG, 0.6))
+            delay = col * 0.13 - row * 0.05
+            o.append('<g>'
+                     + _poly(top, glow, ' class="wglow" filter="url(#calglow)" '
+                             'style="opacity:%.2f;animation-delay:%.2fs"'
+                             % (0.9 if is_best else GLOW_OP[lv], delay))
+                     + "".join(sides)
+                     + _poly(top, "url(#caltop%s)" % ("p" if is_best else lv),
+                             ' class="wtop" style="animation-delay:%.2fs"' % delay)
                      + '</g>')
 
         cal_bottom = oy + max(gys) + hh
@@ -427,16 +454,22 @@ def build_calendar(d):
     # repo-stats/outro/habits row below it, instead of floating as its own
     # boxed panel
     head = [svg_open(W, H, "Contributions - last 3 months")]
+    defs = ['<filter id="calglow" x="-1" y="-1" width="3" height="3">'
+            '<feGaussianBlur stdDeviation="3.5"/></filter>']
+    for key, c in [(1, _mix(WHITE, BG, 0.30)), (2, _mix(WHITE, BG, 0.50)),
+                   (3, _mix(WHITE, BG, 0.75)), (4, WHITE), ("p", ROSE)]:
+        defs.append('<radialGradient id="caltop%s"><stop offset="0" stop-color="%s"/>'
+                    '<stop offset="1" stop-color="%s"/></radialGradient>'
+                    % (key, c, _mix(c, TOWER_BODY, 0.55)))
+    head.append('<defs>' + "".join(defs) + '</defs>')
     head.append('<style>' + BASE_CSS + '''
-  .dayglow { animation-name:dayglow; animation-timing-function:linear;
-             animation-iteration-count:infinite; animation-duration:%.2fs; }
-  @keyframes dayglow {
-    0%%   { filter:brightness(1) drop-shadow(0 0 0 rgba(247,118,142,0)); }
-    1%%   { filter:brightness(2.3) drop-shadow(0 0 6px rgba(247,118,142,0.9)); }
-    3%%   { filter:brightness(1) drop-shadow(0 0 0 rgba(247,118,142,0)); }
-  }
-  @media (prefers-reduced-motion: reduce) { .dayglow { animation:none; } }
-''' % max(loop_dur, 0.01) + '</style>')
+  .wglow { animation:wglow %(d).2fs linear infinite both; }
+  .wtop  { animation:wtop  %(d).2fs linear infinite both; }
+  @keyframes wglow { 0%% { opacity:.1; } 6%% { opacity:1; } 18%%, 100%% { opacity:.1; } }
+  @keyframes wtop  { 0%% { filter:brightness(1); } 6%% { filter:brightness(1.9); }
+                     18%%, 100%% { filter:brightness(1); } }
+  @media (prefers-reduced-motion: reduce) { .wglow, .wtop { animation:none; } }
+''' % {"d": loop_dur} + '</style>')
     return "\n".join(head + o + ['</svg>'])
 
 
@@ -526,21 +559,21 @@ def build_habits(d):
     # sections when a size assumption drifted).
     body = []
     y = pad
-    body.append(text(x0, y + 10, "Recent coding habits", size=12, fill=WHITE, family=SANS,
+    body.append(text(x0, y + 12, "Recent coding habits", size=15, fill=WHITE, family=SANS,
                      weight=700))
-    body.append(text(x1, y + 10, "last 12 months", size=8.5, fill=DIM, family=SANS, anchor="end"))
-    y += 34
+    body.append(text(x1, y + 12, "last 12 months", size=10.5, fill=DIM, family=SANS, anchor="end"))
+    y += 40
 
     # -- commit activity by day of week, as real bars (not the calendar's
     # capsule rhythm bars — a taller, flatter-topped bar reads more like a
     # standalone chart now that it's the headline row instead of one of three)
-    body.append(text(x0, y, "COMMIT ACTIVITY BY DAY", size=8, fill=DIM, family=SANS, spacing=1))
+    body.append(text(x0, y, "COMMIT ACTIVITY BY DAY", size=10, fill=DIM, family=SANS, spacing=1))
     wk_src = d["commit_weekday"] if sum(d["commit_weekday"].values()) else d["weekday"]
     wk = [wk_src.get(i, 0) for i in range(7)]
     peak_wk = max(wk) or 1
     bar_gap = 10
     bar_w = (x1 - x0 - bar_gap * 6) / 7
-    base = y + 14 + 46
+    base = y + 16 + 46
     for i, v in enumerate(wk):
         bx = x0 + i * (bar_w + bar_gap)
         bh = max(3, 46 * v / peak_wk)
@@ -548,9 +581,9 @@ def build_habits(d):
         body.append(rect(bx, base - bh, bar_w, bh, rx=3,
                          fill=ROSE if is_peak else WHITE, opacity=0.95 if is_peak else 0.32,
                          cls="build", style="animation-delay:%.2fs" % (0.1 + i * 0.05)))
-        body.append(text(bx + bar_w / 2, base + 14, "MTWTFSS"[i], size=8,
+        body.append(text(bx + bar_w / 2, base + 17, "MTWTFSS"[i], size=10.5,
                          fill=ROSE if is_peak else DIM, anchor="middle"))
-    y = base + 14 + 20
+    y = base + 17 + 24
 
     # -- top languages, by byte share of owned repos, as a hollow ring -------
     # Capped at MAX_LANGS regardless of how many languages the account
@@ -559,16 +592,19 @@ def build_habits(d):
     # list's own footprint stays inside a fixed max height instead of
     # pushing the commit-streaks section below it further down every time
     # someone picks up a new language.
-    body.append(text(x0, y, "LANGUAGE ACTIVITY", size=8, fill=DIM, family=SANS, spacing=1))
-    y += 14
+    body.append(text(x0, y, "LANGUAGE ACTIVITY", size=10, fill=DIM, family=SANS, spacing=1))
+    y += 16
     MAX_LANGS = 6
     top = d["langs"].most_common(MAX_LANGS)
     total_bytes = sum(v for _, v in top) or 1
+    # languages that round to 0% are noise (a template file here, a config
+    # there) - drop them from ring and legend; shares stay out of the full top
+    top = [(lang, v) for lang, v in top if 100 * v / total_bytes >= 0.5]
     # rose + neutrals only, at falling opacity, rather than reaching for new
     # hues — stays within the panel's rose/white/gray palette at any count
     ring_colors = [(ROSE, 1), (WHITE, 0.9), (MUTED, 0.8), (DIM, 0.85), (ROSE, 0.55), (WHITE, 0.5)]
-    LEGEND_MAX_H = 108   # the hard cap "set a max size" enforces
-    row_h = min(22, LEGEND_MAX_H / max(1, len(top)))
+    LEGEND_MAX_H = 120   # the hard cap "set a max size" enforces
+    row_h = min(24, LEGEND_MAX_H / max(1, len(top)))
 
     r, sw = 38, 15
     cx, cy = x0 + r + sw / 2, y + r + sw / 2
@@ -586,9 +622,9 @@ def build_habits(d):
         cum += arc
     body.append('</g>')
     if top:
-        body.append(text(cx, cy - 3, top[0][0][:10], size=9.5, fill=WHITE, family=SANS,
+        body.append(text(cx, cy - 3, top[0][0][:10], size=11, fill=WHITE, family=SANS,
                          anchor="middle", weight=600))
-        body.append(text(cx, cy + 13, "%.0f%%" % (100 * top[0][1] / total_bytes), size=12,
+        body.append(text(cx, cy + 15, "%.0f%%" % (100 * top[0][1] / total_bytes), size=14,
                          fill=ROSE, family=SANS, anchor="middle", weight=700))
 
     # label and share on one line per language (rather than stacked) so
@@ -602,9 +638,9 @@ def build_habits(d):
         ly = ly0 + i * row_h
         color, op = ring_colors[i % len(ring_colors)]
         label = lang if len(lang) <= 13 else lang[:12] + "…"   # max size: never overflow the row
-        body.append(rect(lx, ly - 6, 8, 8, rx=2, fill=color, opacity=op))
-        body.append(text(lx + 13, ly + 1, label, size=9.5, fill=WHITE, family=SANS))
-        body.append(text(x1, ly + 1, "%.0f%%" % pct, size=8.5, fill=DIM, family=SANS, anchor="end"))
+        body.append(rect(lx, ly - 8, 10, 10, rx=2, fill=color, opacity=op))
+        body.append(text(lx + 16, ly + 2, label, size=12, fill=WHITE, family=SANS))
+        body.append(text(x1, ly + 2, "%.0f%%" % pct, size=11, fill=DIM, family=SANS, anchor="end"))
     y = cy + max(r + sw / 2, legend_half_h + 12) + 28
 
     # -- commit streaks, the other half of "habits" the day/language sections
@@ -613,24 +649,23 @@ def build_habits(d):
     # collect() and otherwise unused by any panel. Sized as generously as the
     # bars/ring above it rather than packed tight, so this closing section
     # carries its share of the panel's height instead of trailing off thin.
-    body.append(text(x0, y, "COMMIT STREAKS", size=8, fill=DIM, family=SANS, spacing=1))
-    y += 26
-    avg_per_day = d["total"] / 365
+    body.append(text(x0, y, "COMMIT STREAKS", size=10, fill=DIM, family=SANS, spacing=1))
+    y += 28
     streak_stats = [
         ("flame", "Current streak", "%d day%s" % (d["streak_now"], "" if d["streak_now"] == 1 else "s")),
         ("flame", "Best streak", "%d day%s" % (d["streak_long"], "" if d["streak_long"] == 1 else "s")),
-        ("pulse", "Commits per day", "%.1f avg" % avg_per_day),
+        ("pulse", "Active days", "%d day%s" % (d["active_days"], "" if d["active_days"] == 1 else "s")),
         ("star", "Highest in a day", "%d commits" % d["best_day"]),
     ]
     tile_w = (x1 - x0) / 2
-    tile_h = 58
+    tile_h = 62
     for i, (icon, label, value) in enumerate(streak_stats):
         col, row = i % 2, i // 2
         bx, by = x0 + col * tile_w, y + row * tile_h
         color = ROSE if label in ("Current streak", "Highest in a day") else WHITE
-        body.append(_stat_icon(icon, bx, by, color, scale=1.3))
-        body.append(text(bx + 24, by + 4, label, size=8.5, fill=DIM, family=SANS))
-        body.append(text(bx + 24, by + 21, value, size=13, fill=color, family=SANS, weight=700,
+        body.append(_stat_icon(icon, bx, by, color, scale=1.5))
+        body.append(text(bx + 30, by + 6, label, size=10.5, fill=DIM, family=SANS))
+        body.append(text(bx + 30, by + 26, value, size=17, fill=color, family=SANS, weight=700,
                          cls="fade", style="animation-delay:%.2fs" % (0.1 + i * 0.06)))
     y += tile_h * 2 + 26
 
@@ -679,171 +714,96 @@ def _stat_icon(name, x, y, color, scale=1.0):
             % (x, y, scale, color, STAT_ICONS[name]))
 
 
-# ── license permissions/limitations/conditions, per choosealicense.com ────────
-# GitHub's own dependency-graph "Licenses" view breaks a license down this
-# way; a personal account has no dependency graph to summarise, but its
-# repos' own licenses do, so this reads that instead. Keyed by a lowercase
-# substring match against GraphQL's licenseInfo.name (e.g. "MIT License"),
-# since that's a free-text name, not a normalised SPDX id.
-# Licenses that don't grant a patent or trademark license get both listed as
-# limitations, same as "Liability"/"Warranty" — nothing in the license text
-# conveys those rights either, so a user of the code is just as limited on
-# that front. Left off wherever a permission entry above already grants it
-# (e.g. GPL's patent grant), so no license lists a term as both.
-_NO_PATENT_TRADEMARK = ["Liability", "Warranty", "Trademark use", "Patent use"]
-_PERMISSIVE_CONDITIONS = ["Copyright notice"]
-LICENSE_INFO = {
-    "mit":     (["Commercial use", "Modification", "Distribution", "Private use"],
-                _NO_PATENT_TRADEMARK, _PERMISSIVE_CONDITIONS),
-    "isc":     (["Commercial use", "Modification", "Distribution", "Private use"],
-                _NO_PATENT_TRADEMARK, _PERMISSIVE_CONDITIONS),
-    "bsd":     (["Commercial use", "Modification", "Distribution", "Private use"],
-                _NO_PATENT_TRADEMARK, _PERMISSIVE_CONDITIONS),
-    "unlicense": (["Commercial use", "Modification", "Distribution", "Private use"],
-                _NO_PATENT_TRADEMARK, []),
-    "cc0":     (["Commercial use", "Modification", "Distribution", "Private use"],
-                _NO_PATENT_TRADEMARK, []),
-    "apache":  (["Commercial use", "Modification", "Distribution", "Patent use", "Private use"],
-                ["Liability", "Trademark use", "Warranty"],
-                ["Copyright notice", "State changes"]),
-    "mozilla": (["Commercial use", "Modification", "Distribution", "Patent use", "Private use"],
-                ["Liability", "Trademark use", "Warranty"],
-                ["Copyright notice", "Disclose source", "Same license"]),
-    "affero":  (["Commercial use", "Modification", "Distribution", "Patent use", "Private use"],
-                ["Liability", "Trademark use", "Warranty"],
-                ["Copyright notice", "State changes", "Disclose source", "Network use"]),
-    "lesser":  (["Commercial use", "Modification", "Distribution", "Patent use", "Private use"],
-                ["Liability", "Trademark use", "Warranty"],
-                ["Copyright notice", "Disclose source", "State changes"]),
-    "general public": (["Commercial use", "Modification", "Distribution", "Patent use", "Private use"],
-                ["Liability", "Trademark use", "Warranty"],
-                ["Copyright notice", "State changes", "Disclose source", "Same license"]),
-}
-LICENSE_DEFAULT = (["Commercial use", "Modification", "Distribution", "Private use"],
-                    _NO_PATENT_TRADEMARK, _PERMISSIVE_CONDITIONS)
-
-
-def _license_info(name):
-    low = (name or "").lower()
-    for key, info in LICENSE_INFO.items():
-        if key in low:
-            return info
-    return LICENSE_DEFAULT
-
-
 def build_repo_stats(d):
-    """The left-hand stat grid next to the outro image, mirroring GitHub's
-    own repository-overview sidebar — pulled from this run's real account
-    data (see `collect`), not sample numbers. Views/sponsors/packages/
-    releases/watchers/storage all read 0 without METRICS_TOKEN, the same as
-    every other authenticated-only field in this file.
+    """The left-hand panel next to the outro image, pulled from this run's
+    real account data (see `collect`): a two-column grid of account stats,
+    then the most recently pushed repositories with their main language and
+    how long ago they moved. Zero-by-default counters (sponsors, packages,
+    watchers), storage used and the license breakdown were dropped as noise.
+    Views need the authenticated query, so without METRICS_TOKEN that stat
+    drops out instead of showing 0.
     """
     def plural(n, singular, plural_form):
         return "%s %s" % (format(n, ","), singular if n == 1 else plural_form)
 
+    lang_total = sum(d["langs"].values()) or 1
+    n_langs = sum(1 for v in d["langs"].values() if 100 * v / lang_total >= 0.5)
     views = d.get("views_14d")
-    views_str = ("—" if views is None else
-                 "%.1fk views (14d)" % (views / 1000) if (views or 0) >= 1000 else
-                 "%s (14d)" % plural(views or 0, "view", "views"))
-
-    # license gets its own detailed section below (permissions/limitations/
-    # conditions), so this row shows account age instead of repeating it
-    joined_str = "Member since %s" % d["created"][:4]
-
-    rows = [
+    stats = [
         ("repo",     plural(d["repo_count"], "Repository", "Repositories"), True),
-        ("heart",    plural(d["sponsors"], "Sponsor", "Sponsors"),          False),
-        ("calendar", joined_str,                                            False),
         ("star",     plural(d["stars"], "Stargazer", "Stargazers"),        False),
-        ("release",  plural(d["releases"], "Release", "Releases"),         False),
         ("fork",     plural(d["forks"], "Forker", "Forkers"),              False),
-        ("package",  plural(d["packages"], "Package", "Packages"),         False),
-        ("eye",      plural(d["watchers"], "Watcher", "Watchers"),         False),
-        ("database", "%.2f GB used" % d["storage_gb"],                     False),
-        ("pulse",    views_str,                                            False),
+        ("release",  plural(d["releases"], "Release", "Releases"),         False),
+        ("pulse",    plural(d["total"], "contribution", "contributions"),   False),
+        ("package",  plural(n_langs, "language", "languages"),             False),
+        ("calendar", "Member since %s" % d["created"][:4],                 False),
     ]
+    if views is not None:
+        stats.append(("eye", ("%.1fk views (14d)" % (views / 1000)) if views >= 1000
+                      else "%s (14d)" % plural(views, "view", "views"), False))
 
-    # Two columns, five rows, instead of one long column — pairs each stat
-    # with its neighbour so the row spans the panel's full width rather than
-    # trailing off into blank space on the right, and leaves room to run the
-    # icons and type a size up.
-    W = 380
-    pad_x, pad_top = 20, 22
+    today = dt.date.today()
+
+    def ago(stamp):
+        days = (today - dt.date.fromisoformat(stamp[:10])).days
+        if days <= 0:
+            return "today"
+        if days < 30:
+            return "%dd ago" % days
+        if days < 365:
+            return "%dmo ago" % (days // 30)
+        return "%dy ago" % (days // 365)
+
+    def main_lang(r):
+        langs = {k: v for k, v in r["langs"].items() if k not in IGNORE_LANGS} or r["langs"]
+        return max(langs, key=langs.get) if langs else None
+
+    recent = sorted((r for r in d["repos"] if r.get("pushed") and r["name"] != USER),
+                    key=lambda r: r["pushed"], reverse=True)[:5]
+    # the same rose/neutral steps as the habits ring, so a language keeps
+    # one colour across both panels
+    ring = [lang for lang, _ in d["langs"].most_common(6)]
+    shades = [(ROSE, 1), (WHITE, 0.9), (MUTED, 0.8), (DIM, 0.85), (ROSE, 0.55), (WHITE, 0.5)]
+
+    W, H = 380, 474
+    pad_x = 20
     col_gap = 16
     col_w = (W - 2 * pad_x - col_gap) / 2
-    row_h = 44
-    n_rows = -(-len(rows) // 2)
+    stat_h = 38
+    repo_h = 34
+    n_stat_rows = -(-len(stats) // 2)
+    content_h = n_stat_rows * stat_h + 30 + 26 + len(recent) * repo_h
+    y = (H - content_h) / 2
 
     body = []
-    for i, (key, label, highlight) in enumerate(rows):
+    for i, (key, label, highlight) in enumerate(stats):
         col, row = i % 2, i // 2
         cx = pad_x + col * (col_w + col_gap)
-        cy = pad_top + row * row_h + row_h / 2
-        color = ROSE if highlight else DIM
-        body.append(_stat_icon(key, cx, cy - 10, color, scale=1.35))
-        body.append('<text x="%.1f" y="%.1f" font-family="%s" font-size="14" fill="%s" '
+        cy = y + row * stat_h + stat_h / 2
+        body.append(_stat_icon(key, cx, cy - 9.5, ROSE if highlight else MUTED, scale=1.35))
+        body.append('<text x="%.1f" y="%.1f" font-family="%s" font-size="14.5" fill="%s" '
                     'class="fade" style="animation-delay:%.2fs">%s</text>'
-                     % (cx + 26, cy + 5, SANS, ROSE if highlight else WHITE, i * 0.04, esc(label)))
-    y = pad_top + n_rows * row_h
-
-    # -- license permissions/limitations/conditions, filling the space below
-    # the stat rows the way GitHub's own dependency-graph license view does,
-    # scoped to whichever license this run's repos actually use most. Two
-    # rows here too: permissions and limitations paired side by side (the
-    # panel's two most-populated lists), conditions given the full width
-    # below since it reads better as a single spread-out line than a third
-    # cramped column.
-    y += 18
-    body.append('<path d="M%.1f %.1f H%.1f" stroke="%s" stroke-width="1"/>'
-               % (pad_x, y, W - pad_x, LINE))
-    y += 22
-    licensed = sum(1 for r in d["repos"] if r.get("license"))
-    body.append(text(pad_x, y, "MOST-USED LICENSE", size=8.5, fill=DIM, family=SANS, spacing=1))
-    body.append(text(W - pad_x, y, plural(licensed, "repo", "repos") + " licensed",
-                     size=8.5, fill=DIM, family=SANS, anchor="end"))
+                    % (cx + 27, cy + 5, SANS, ROSE if highlight else WHITE, i * 0.04, esc(label)))
+    y += n_stat_rows * stat_h + 14
+    body.append('<path d="M%d %.1f H%d" stroke="%s" stroke-width="1"/>' % (pad_x, y, W - pad_x, LINE))
     y += 30
-    top_col_w = (W - 2 * pad_x - col_gap) / 2
-    right_x = pad_x + top_col_w + col_gap
 
-    perms, limits, conds = _license_info(d["license"]) if d["license"] else ([], [], [])
-    if perms or limits or conds:
-        # row one: the license name, paired with its conditions on the
-        # right so that side of the row isn't just blank when a permissive
-        # license (often just one condition) is what's detected
-        body.append(text(pad_x, y, d["license"] or "No license detected", size=16, fill=WHITE,
-                         family=SANS, weight=700))
-        cond_h = 0
-        if conds:
-            body.append(text(right_x, y - 15, "CONDITIONS", size=8, fill=DIM, family=SANS,
-                             spacing=0.8))
-            for ii, item in enumerate(conds):
-                iy = y + 2 + ii * 18
-                body.append(_stat_icon("dot", right_x, iy - 9, MUTED, scale=1.0))
-                body.append(text(right_x + 16, iy, item, size=10, fill=WHITE, family=SANS))
-            cond_h = len(conds) * 18
-        y += max(36, cond_h + 14)
+    if recent:
+        body.append(text(pad_x, y, "RECENTLY PUSHED", size=10, fill=DIM, family=SANS, spacing=1))
+        y += 8
+        for i, r in enumerate(recent):
+            ry = y + i * repo_h + repo_h / 2
+            lang = main_lang(r)
+            color, op = shades[ring.index(lang)] if lang in ring else (DIM, 0.85)
+            name = r["name"] if len(r["name"]) <= 24 else r["name"][:23] + "…"
+            meta = "%s · %s" % (lang, ago(r["pushed"])) if lang else ago(r["pushed"])
+            body.append('<g class="fade" style="animation-delay:%.2fs">' % (0.3 + i * 0.06)
+                        + '<circle cx="%d" cy="%.1f" r="4" fill="%s" opacity="%.2f"/>'
+                        % (pad_x + 4, ry, color, op)
+                        + text(pad_x + 18, ry + 4.5, name, size=13, fill=WHITE, family=SANS)
+                        + text(W - pad_x, ry + 4.5, meta, size=11, fill=DIM, family=SANS, anchor="end")
+                        + "</g>")
 
-        # row two: permissions paired with limitations, the panel's two
-        # busiest lists, each getting a full half-width column
-        row_cols = [("PERMISSIONS", perms, "check", ROSE), ("LIMITATIONS", limits, "minus", DIM)]
-        for ci, (clabel, items, icon, color) in enumerate(row_cols):
-            cx = pad_x + ci * (top_col_w + col_gap)
-            body.append(text(cx, y, clabel, size=8.5, fill=DIM, family=SANS, spacing=0.8))
-            for ii, item in enumerate(items):
-                iy = y + 24 + ii * 21
-                body.append(_stat_icon(icon, cx, iy - 9, color, scale=1.05))
-                body.append(text(cx + 17, iy, item, size=10.5, fill=WHITE, family=SANS))
-        y += 24 + max(len(perms), len(limits)) * 21
-    else:
-        body.append(text(pad_x, y, d["license"] or "No license detected", size=16, fill=WHITE,
-                         family=SANS, weight=700))
-        y += 28
-        body.append(text(pad_x, y, "Add a LICENSE file to a repo to show terms here.",
-                         size=10.5, fill=DIM, family=SANS))
-        y += 20
-    y += pad_top
-
-    H = round(y)
     o = [svg_open(W, H, "Repository stats")]
     o.append('<style>' + BASE_CSS + '</style>')
     o.extend(body)
