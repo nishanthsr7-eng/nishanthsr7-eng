@@ -18,6 +18,6 @@
 
 <br>
 
-<img width="37%" align="middle" alt="Repository stats" src="https://gist.githubusercontent.com/nishanthsr7-eng/ad81df052c511fdf3161c25469d415e9/raw/repo-stats.svg?v=3"><img width="25%" align="middle" alt="" src="assets/outro.png"><img width="37%" align="middle" alt="Recent coding habits" src="https://gist.githubusercontent.com/nishanthsr7-eng/ad81df052c511fdf3161c25469d415e9/raw/habits.svg?v=3">
+<img width="37%" align="middle" alt="Repository stats" src="https://gist.githubusercontent.com/nishanthsr7-eng/ad81df052c511fdf3161c25469d415e9/raw/repo-stats.svg?v=4"><img width="25%" align="middle" alt="" src="assets/outro.png"><img width="37%" align="middle" alt="Recent coding habits" src="https://gist.githubusercontent.com/nishanthsr7-eng/ad81df052c511fdf3161c25469d415e9/raw/habits.svg?v=4">
 
 </div>
