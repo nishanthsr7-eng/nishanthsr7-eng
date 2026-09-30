@@ -461,6 +461,27 @@ def build_calendar(d):
 
     H = round(cal_bottom + 34)
 
+    # The diamond grid leaves two empty corners: totals go in the top-right,
+    # above the grid's upper-right edge, and a Less -> More legend of five
+    # mini towers (same tops as the grid's levels) sits in the bottom-left.
+    o.append('<g class="rise" style="animation-delay:.4s">'
+             + text(R, top_y + 38, format(d["cal_total"], ","), size=22, fill=WHITE, family=SANS,
+                    weight=800, anchor="end")
+             + text(R, top_y + 51, "contributions", size=7.5, fill=DIM, family=SANS, anchor="end")
+             + '</g><g class="rise" style="animation-delay:.6s">'
+             + text(R, top_y + 76, format(d["cal_active"], ","), size=14, fill=WHITE, family=SANS,
+                    weight=700, anchor="end")
+             + text(R, top_y + 88, "active days", size=7.5, fill=DIM, family=SANS, anchor="end")
+             + '</g>')
+    lg_y = H - 18
+    o.append(text(L, lg_y + 2, "Less", size=7.5, fill=DIM, family=SANS))
+    for i, top in enumerate(["caltop1", "caltop2", "caltop3", "caltop4", "caltopp"]):
+        gx, eh = L + 30 + i * 16, 2 + i * 3
+        sides, face = iso_tile(gx, lg_y, 6, 3.4, eh, None, "#1f252e", "#161a21")
+        o.append('<g class="mini" style="animation-delay:%.2fs">' % (i * .25)
+                 + "".join(sides) + _poly(face, "url(#%s)" % top) + '</g>')
+    o.append(text(L + 30 + 5 * 16 - 2, lg_y + 2, "More", size=7.5, fill=DIM, family=SANS))
+
     # no card frame — sits directly on the page background, same as the
     # repo-stats/outro/habits row below it, instead of floating as its own
     # boxed panel
@@ -479,7 +500,9 @@ def build_calendar(d):
   @keyframes wglow { 0%% { opacity:.1; } 6%% { opacity:1; } 18%%, 100%% { opacity:.1; } }
   @keyframes wtop  { 0%% { filter:brightness(1); } 6%% { filter:brightness(1.9); }
                      18%%, 100%% { filter:brightness(1); } }
-  @media (prefers-reduced-motion: reduce) { .wglow, .wtop { animation:none; } }
+  .mini  { transform-box:fill-box; transform-origin:50%% 100%%; animation:mini 3.2s ease-in-out infinite; }
+  @keyframes mini { 0%%, 100%% { transform:scaleY(1); } 50%% { transform:scaleY(1.25); } }
+  @media (prefers-reduced-motion: reduce) { .wglow, .wtop, .mini { animation:none; } }
 ''' % {"d": loop_dur} + '</style>')
     return "\n".join(head + o + ['</svg>'])
 
