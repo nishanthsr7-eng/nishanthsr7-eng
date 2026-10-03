@@ -87,6 +87,16 @@ BASE_CSS = f"""
 """
 
 
+# The stat panels (activity, habits, repo stats): shapes are static from the
+# first frame and only text fades in, so nothing moves on load.
+PANEL_CSS = """
+  .fade    { opacity:0; animation:fade .5s cubic-bezier(.22,.61,.36,1) forwards; }
+  @keyframes fade  { to { opacity:1; } }
+  @media (prefers-reduced-motion: reduce) {
+    .fade { opacity:1 !important; animation:none !important; }
+  }
+"""
+
 def card_frame(x, y, w, h, r=14, fill=BG, stroke=LINE):
     """A floating card, inset from the SVG's own edges with a soft drop
     shadow — not an edge-to-edge fill. That way it reads as a card sitting

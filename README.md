@@ -4,7 +4,7 @@
 
 <br>
 
-<img width="57%" align="middle" alt="Contribution calendar — last 3 months" src="https://gist.githubusercontent.com/nishanthsr7-eng/ad81df052c511fdf3161c25469d415e9/raw/contribution-calendar.svg?v=9">&nbsp;&nbsp;<img width="41%" align="middle" alt="Activity, last 3 months" src="https://gist.githubusercontent.com/nishanthsr7-eng/ad81df052c511fdf3161c25469d415e9/raw/activity-graph.svg?v=8">
+<img width="57%" align="middle" alt="Contribution calendar — last 3 months" src="https://gist.githubusercontent.com/nishanthsr7-eng/ad81df052c511fdf3161c25469d415e9/raw/contribution-calendar.svg?v=9">&nbsp;&nbsp;<img width="41%" align="middle" alt="Activity, last 3 months" src="https://gist.githubusercontent.com/nishanthsr7-eng/ad81df052c511fdf3161c25469d415e9/raw/activity-graph.svg?v=9">
 
 <br>
 
@@ -18,6 +18,6 @@
 
 <br>
 
-<img width="37%" align="middle" alt="Repository stats" src="https://gist.githubusercontent.com/nishanthsr7-eng/ad81df052c511fdf3161c25469d415e9/raw/repo-stats.svg?v=4"><img width="25%" align="middle" alt="" src="assets/outro.png"><img width="37%" align="middle" alt="Recent coding habits" src="https://gist.githubusercontent.com/nishanthsr7-eng/ad81df052c511fdf3161c25469d415e9/raw/habits.svg?v=4">
+<img width="37%" align="middle" alt="Repository stats" src="https://gist.githubusercontent.com/nishanthsr7-eng/ad81df052c511fdf3161c25469d415e9/raw/repo-stats.svg?v=5"><img width="25%" align="middle" alt="" src="assets/outro.png"><img width="37%" align="middle" alt="Recent coding habits" src="https://gist.githubusercontent.com/nishanthsr7-eng/ad81df052c511fdf3161c25469d415e9/raw/habits.svg?v=5">
 
 </div>

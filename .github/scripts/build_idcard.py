@@ -45,13 +45,10 @@ SX, SY, SR = 702, 168, 60         # sun
 TX = 702                          # torii centre
 
 CSS = """
-  .rise { opacity:0; animation:rise .9s cubic-bezier(.2,.7,.3,1) forwards; }
-  .grow { transform-box:fill-box; transform-origin:0 50%; transform:scaleX(0);
-          animation:grow 1s cubic-bezier(.2,.7,.3,1) forwards; }
+  .rise { opacity:0; animation:rise .6s cubic-bezier(.22,.61,.36,1) forwards; }
   .tw   { animation:tw 3.2s ease-in-out infinite; }
   .vk   { writing-mode:vertical-rl; }
-  @keyframes rise { from { opacity:0; transform:translateY(10px); } to { opacity:1; transform:translateY(0); } }
-  @keyframes grow { to { transform:scaleX(1); } }
+  @keyframes rise { from { opacity:0; } to { opacity:1; } }
   @keyframes tw   { 0%,100% { opacity:.15; } 50% { opacity:.9; } }
 
   .sun  { transform-box:fill-box; transform-origin:center; animation:sun 9s ease-in-out infinite; }
@@ -78,7 +75,7 @@ CSS = """
 
   @media (prefers-reduced-motion: reduce) {
     * { animation-duration:.01ms !important; animation-iteration-count:1 !important; }
-    .rise { opacity:1 !important; transform:none !important; }
+    .rise { opacity:1 !important; }
   }
 """
 
@@ -278,14 +275,15 @@ def text_layer():
     kana = (f'<text class="vk" x="66" y="72" font-family="{MINCHO}" font-size="13" fill="{ACCENT}" '
             f'opacity=".7" letter-spacing="9">{esc(KANA)}</text>')
     return "".join([
-        rise(.1, kana + f'<rect x="65" y="172" width="1" height="120" fill="{WHITE}" opacity=".12"/>'),
-        rise(.22, t(x, 88, GREETING, size=11.5, op=.45, sp=8)),
-        rise(.34, t(x - 1, 136, NAME, size=42, weight=600)),
-        f'<rect class="grow" style="animation-delay:.55s" x="{x}" y="158" width="34" height="2" '
+        f'<rect x="65" y="172" width="1" height="120" fill="{WHITE}" opacity=".12"/>',
+        rise(0, kana),
+        rise(.05, t(x, 88, GREETING, size=11.5, op=.45, sp=8)),
+        rise(.1, t(x - 1, 136, NAME, size=42, weight=600)),
+        f'<rect x="{x}" y="158" width="34" height="2" '
         f'rx="1" fill="{ACCENT}"/>',
-        rise(.66, label(x, 200, "ABOUT") + t(x, 222, ABOUT, size=13.5, op=.88)),
-        rise(.8, label(x, 270, "LOCATION") + t(x, 292, LOCATION, size=14.5, op=.92)),
-        rise(.92, label(x + 210, 270, "GENDER") + t(x + 210, 292, GENDER, size=14.5, op=.92)),
+        rise(.18, label(x, 200, "ABOUT") + t(x, 222, ABOUT, size=13.5, op=.88)),
+        rise(.24, label(x, 270, "LOCATION") + t(x, 292, LOCATION, size=14.5, op=.92)),
+        rise(.28, label(x + 210, 270, "GENDER") + t(x + 210, 292, GENDER, size=14.5, op=.92)),
     ])
 
 

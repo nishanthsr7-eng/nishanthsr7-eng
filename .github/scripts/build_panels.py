@@ -35,7 +35,7 @@ import pathlib
 import re
 import urllib.request
 
-from theme import (BG, LINE, DIM, MUTED, WHITE, ROSE, SANS, BASE_CSS,
+from theme import (BG, LINE, DIM, MUTED, WHITE, ROSE, SANS, BASE_CSS, PANEL_CSS,
                     esc, rect, svg_open, text)
 
 USER = "nishanthsr7-eng"
@@ -553,19 +553,18 @@ def build_activity_graph(d, target_h=None):
         is_peak = v == peak and v > 0
         color = ROSE if is_peak else WHITE
         o.append(rect(bx, bar_base - h, bar_w, h, rx=7, fill=color,
-                      opacity=0.95 if is_peak else 0.32,
-                      cls="build", style="animation-delay:%.2fs" % (0.15 + i * 0.12)))
+                      opacity=0.95 if is_peak else 0.32))
         if v:
             o.append(text(bx + bar_w / 2, bar_base - h - 10, str(v), size=10.5, fill=color,
                           anchor="middle", weight=700, family=SANS,
-                          cls="fade", style="animation-delay:%.2fs" % (0.5 + i * 0.12)))
+                          cls="fade", style="animation-delay:%.2fs" % (0.15 + i * 0.06)))
         month_name = dt.date.fromisoformat(ym + "-01").strftime("%b")
         o.append(text(bx + bar_w / 2, bar_base + 20, month_name, size=9.5,
                       fill=ROSE if is_peak else DIM, anchor="middle", family=SANS))
 
     H = target_h if target_h else round(bar_base + 44)
     head = [svg_open(W, H, "Activity - last 3 months")]
-    head.append('<style>' + BASE_CSS + '</style>')
+    head.append('<style>' + PANEL_CSS + '</style>')
     return "\n".join(head + o + ['</svg>'])
 
 
@@ -614,8 +613,7 @@ def build_habits(d):
         bh = max(3, bar_max * v / peak_wk)
         is_peak = v == peak_wk and v > 0
         body.append(rect(bx, base - bh, bar_w, bh, rx=3,
-                         fill=ROSE if is_peak else WHITE, opacity=0.95 if is_peak else 0.32,
-                         cls="build", style="animation-delay:%.2fs" % (0.1 + i * 0.05)))
+                         fill=ROSE if is_peak else WHITE, opacity=0.95 if is_peak else 0.32))
         body.append(text(bx + bar_w / 2, base + 15, "MTWTFSS"[i], size=10,
                          fill=ROSE if is_peak else DIM, anchor="middle"))
     y += DAYS_H + gap
@@ -645,9 +643,8 @@ def build_habits(d):
         color, op = ring_colors[i % len(ring_colors)]
         body.append(
             '<circle cx="%.1f" cy="%.1f" r="%d" fill="none" stroke="%s" stroke-width="%d" '
-            'stroke-opacity="%.2f" stroke-dasharray="%.2f %.2f" stroke-dashoffset="%.2f" '
-            'class="fade" style="animation-delay:%.2fs"/>'
-            % (cx, cy, r, color, sw, op, arc, circumference - arc, -cum, 0.5 + i * 0.12))
+            'stroke-opacity="%.2f" stroke-dasharray="%.2f %.2f" stroke-dashoffset="%.2f"/>'
+            % (cx, cy, r, color, sw, op, arc, circumference - arc, -cum))
         cum += arc
     body.append('</g>')
     if top:
@@ -691,10 +688,10 @@ def build_habits(d):
         body.append(_stat_icon(icon, bx, by, color, scale=1.4))
         body.append(text(bx + 28, by + 6, label, size=10, fill=DIM, family=SANS))
         body.append(text(bx + 28, by + 26, value, size=16, fill=color, family=SANS, weight=700,
-                         cls="fade", style="animation-delay:%.2fs" % (0.1 + i * 0.06)))
+                         cls="fade", style="animation-delay:%.2fs" % (0.05 + i * 0.04)))
 
     o = [svg_open(W + SIDE_GAP, H, "Recent coding habits")]
-    o.append('<style>' + BASE_CSS + '</style>')
+    o.append('<style>' + PANEL_CSS + '</style>')
     o.append('<g transform="translate(%d,0)">' % SIDE_GAP)   # gap on the left, toward the image
     o.extend(body)
     o.append('</g>')
@@ -857,15 +854,15 @@ def build_repo_stats(d):
             color, op = shades[ring.index(lang)] if lang in ring else (DIM, 0.85)
             name = r["name"] if len(r["name"]) <= 24 else r["name"][:23] + "…"
             meta = "%s · %s" % (lang, ago(r["pushed"])) if lang else ago(r["pushed"])
-            body.append('<g class="fade" style="animation-delay:%.2fs">' % (0.3 + i * 0.06)
-                        + '<circle cx="%d" cy="%.1f" r="4" fill="%s" opacity="%.2f"/>'
+            body.append('<circle cx="%d" cy="%.1f" r="4" fill="%s" opacity="%.2f"/>'
                         % (pad_x + 4, ry, color, op)
+                        + '<g class="fade" style="animation-delay:%.2fs">' % (0.1 + i * 0.04)
                         + text(pad_x + 18, ry + 4.5, name, size=13, fill=WHITE, family=SANS)
                         + text(W - pad_x, ry + 4.5, meta, size=11, fill=DIM, family=SANS, anchor="end")
                         + "</g>")
 
     o = [svg_open(W + SIDE_GAP, H, "Repository stats")]   # gap on the right, toward the image
-    o.append('<style>' + BASE_CSS + '</style>')
+    o.append('<style>' + PANEL_CSS + '</style>')
     o.extend(body)
     o.append('</svg>')
     return "\n".join(o)
