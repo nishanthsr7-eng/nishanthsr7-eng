@@ -1,6 +1,6 @@
 <div align="center">
 
-<img width="100%" alt="Nishanth S — identity card" src="assets/id-card.svg">
+<img width="100%" alt="Nishanth S — identity card" src="https://raw.githubusercontent.com/nishanthsr7-eng/nishanthsr7-eng/main/assets/id-card.svg">
 
 <br>
 
@@ -18,6 +18,6 @@
 
 <br>
 
-<img width="37%" align="middle" alt="Repository stats" src="https://gist.githubusercontent.com/nishanthsr7-eng/ad81df052c511fdf3161c25469d415e9/raw/repo-stats.svg?v=5"><img width="25%" align="middle" alt="" src="assets/outro.png"><img width="37%" align="middle" alt="Recent coding habits" src="https://gist.githubusercontent.com/nishanthsr7-eng/ad81df052c511fdf3161c25469d415e9/raw/habits.svg?v=5">
+<img width="37%" align="middle" alt="Repository stats" src="https://gist.githubusercontent.com/nishanthsr7-eng/ad81df052c511fdf3161c25469d415e9/raw/repo-stats.svg?v=5"><img width="25%" align="middle" alt="" src="https://raw.githubusercontent.com/nishanthsr7-eng/nishanthsr7-eng/main/assets/outro.png"><img width="37%" align="middle" alt="Recent coding habits" src="https://gist.githubusercontent.com/nishanthsr7-eng/ad81df052c511fdf3161c25469d415e9/raw/habits.svg?v=5">
 
 </div>
